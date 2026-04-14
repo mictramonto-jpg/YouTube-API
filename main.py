@@ -15,6 +15,14 @@ import queue
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
+import urllib.request
+
+# Pillow はサムネイル表示専用 (なくても動作する)
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 try:
     from openpyxl import Workbook
@@ -903,10 +911,17 @@ class YouTubeCommentExtractorApp:
         clear_btn.pack(side=tk.RIGHT, padx=(0, 6))
         Tooltip(clear_btn, "表示されている結果をクリアします")
 
+        # ===== コンテンツエリア (左: Treeview / 右: プレビュー) =====
+        content = ttk.Frame(outer)
+        content.pack(fill=tk.BOTH, expand=True)
+
         # Treeview
-        panel = tk.Frame(outer, bg="white", highlightbackground=C_BORDER,
+        panel = tk.Frame(content, bg="white", highlightbackground=C_BORDER,
                          highlightthickness=1)
-        panel.pack(fill=tk.BOTH, expand=True)
+        panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # ===== 右側プレビューパネル (動画サムネ + メタ情報) =====
+        self._build_preview_panel(content)
 
         y_sb = ttk.Scrollbar(panel, orient=tk.VERTICAL)
         x_sb = ttk.Scrollbar(panel, orient=tk.HORIZONTAL)
@@ -942,6 +957,7 @@ class YouTubeCommentExtractorApp:
 
         # イベント: ダブルクリックで詳細表示
         self.tree.bind("<Double-1>", self._show_row_detail)
+        self.tree.bind("<<TreeviewSelect>>", self._on_tree_selection)
 
         # 右クリックメニュー
         self._build_tree_context_menu()
@@ -1449,6 +1465,147 @@ class YouTubeCommentExtractorApp:
         self.count_label.config(
             text=f"  件数: {visible} / {len(self.results)} (絞り込み中)"
         )
+
+    # ------------------------------------------------------------------
+    # プレビューパネル (動画サムネイル + メタ情報)
+    # ------------------------------------------------------------------
+
+    def _build_preview_panel(self, parent):
+        """右側に動画プレビューパネルを配置。"""
+        self._thumb_cache = {}  # video_id -> PhotoImage
+        self._thumb_lock = threading.Lock()
+
+        preview = tk.Frame(parent, bg=C_PANEL_ALT,
+                           highlightbackground=C_BORDER,
+                           highlightthickness=1,
+                           width=280)
+        preview.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0))
+        preview.pack_propagate(False)
+
+        ttk.Label(preview, text="▶ プレビュー",
+                  background=C_PANEL_ALT,
+                  font=("Yu Gothic UI Semibold", 11) if sys.platform == "win32" else ("", 11, "bold"),
+                  ).pack(anchor="w", padx=10, pady=(10, 6))
+
+        # サムネイルエリア
+        self.thumb_label = tk.Label(preview, bg="#000000",
+                                     width=256, height=144, text="",
+                                     fg="#888")
+        self.thumb_label.pack(padx=10, pady=(0, 8))
+
+        # メタ情報
+        self.preview_title_var = tk.StringVar(value="(行を選択してください)")
+        ttk.Label(preview, textvariable=self.preview_title_var,
+                  background=C_PANEL_ALT, wraplength=256,
+                  font=("Yu Gothic UI", 10, "bold") if sys.platform == "win32" else ("", 10, "bold"),
+                  ).pack(anchor="w", padx=10, pady=(0, 4))
+
+        self.preview_meta_var = tk.StringVar(value="")
+        ttk.Label(preview, textvariable=self.preview_meta_var,
+                  background=C_PANEL_ALT, foreground=C_MUTED, wraplength=256,
+                  ).pack(anchor="w", padx=10, pady=(0, 6))
+
+        # YouTubeで開くボタン
+        self._preview_url = None
+        btn = ttk.Button(preview, text="▶ YouTubeで開く",
+                         style="Link.TButton",
+                         command=self._open_preview_video)
+        btn.pack(padx=10, pady=(0, 8), fill=tk.X)
+
+        if not PIL_AVAILABLE:
+            ttk.Label(preview,
+                      text="(サムネイル表示には\nPillowのインストールが必要)\npip install Pillow",
+                      background=C_PANEL_ALT, foreground=C_WARN,
+                      justify="center",
+                      ).pack(padx=10, pady=(0, 10))
+
+    def _open_preview_video(self):
+        if self._preview_url:
+            webbrowser.open(self._preview_url)
+
+    def _on_tree_selection(self, _evt=None):
+        """Treeview選択変更 → プレビューパネル更新。"""
+        sel = self.tree.selection()
+        if not sel:
+            return
+        vals = self.tree.item(sel[0], "values")
+        if not vals or len(vals) < 7:
+            return
+
+        video_url, title, vid_date, author, _text, _likes, _cdate = vals
+        self._preview_url = str(video_url)
+
+        self.preview_title_var.set(title)
+        # コメント数をカウント
+        n_comments = sum(1 for r in self.results if r[0] == video_url)
+        self.preview_meta_var.set(
+            f"📅 投稿日: {vid_date}\n"
+            f"💬 取得コメント数: {n_comments} 件"
+        )
+
+        # サムネイルを非同期ロード
+        video_id = self._extract_video_id(str(video_url))
+        if video_id and PIL_AVAILABLE:
+            self._load_thumbnail_async(video_id)
+
+    def _extract_video_id(self, url: str) -> str:
+        import re
+        m = re.search(r"[?&]v=([a-zA-Z0-9_-]+)", url)
+        if m:
+            return m.group(1)
+        m = re.search(r"/shorts/([a-zA-Z0-9_-]+)", url)
+        if m:
+            return m.group(1)
+        m = re.search(r"/live/([a-zA-Z0-9_-]+)", url)
+        if m:
+            return m.group(1)
+        return ""
+
+    def _load_thumbnail_async(self, video_id: str):
+        """YouTubeのサムネイルをダウンロードして表示 (キャッシュあり)。"""
+        if video_id in self._thumb_cache:
+            self._display_thumbnail(self._thumb_cache[video_id])
+            return
+
+        self.thumb_label.configure(image="", text="読み込み中...", fg="#aaa")
+
+        def _worker():
+            # 複数解像度を試す (mqdefault = 320x180, hqdefault = 480x360)
+            urls = [
+                f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/default.jpg",
+            ]
+            for url in urls:
+                try:
+                    with urllib.request.urlopen(url, timeout=5) as resp:
+                        data = resp.read()
+                    from io import BytesIO
+                    img = Image.open(BytesIO(data))
+                    img.thumbnail((256, 144))
+                    photo = ImageTk.PhotoImage(img)
+                    with self._thumb_lock:
+                        self._thumb_cache[video_id] = photo
+                    # GUI更新はメインスレッドで
+                    self.root.after(0, lambda: self._display_thumbnail(photo, check_id=video_id))
+                    return
+                except Exception:
+                    continue
+            # すべて失敗
+            self.root.after(0, lambda: self.thumb_label.configure(
+                image="", text="(サムネイル取得失敗)", fg="#aaa"))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _display_thumbnail(self, photo, check_id: str = None):
+        """サムネイル画像をプレビューに表示 (選択が変わっていたら無視)。"""
+        # 表示時に別の動画が選択されていたら無視
+        if check_id:
+            current_id = self._extract_video_id(self._preview_url or "")
+            if current_id != check_id:
+                return
+        self.thumb_label.configure(image=photo, text="")
+        self.thumb_label.image = photo  # GC防止
 
     def _sort_by_column(self, col_id: str):
         """列ヘッダークリックで結果テーブルをソート (昇順⇔降順トグル)。"""
