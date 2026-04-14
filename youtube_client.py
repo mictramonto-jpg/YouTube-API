@@ -54,17 +54,35 @@ def _api_call_with_retry(func, max_retries: int = 3, base_delay: float = 1.0):
 class YouTubeClient:
     """YouTube Data API v3 wrapper for video and comment extraction."""
 
+    # YouTube Data API v3 の公式クォータコスト
+    # https://developers.google.com/youtube/v3/determine_quota_cost
+    QUOTA_COSTS = {
+        "videos.list":         1,
+        "channels.list":       1,
+        "playlistItems.list":  1,
+        "commentThreads.list": 1,
+        "search.list":       100,
+    }
+
     def __init__(self, api_key: str):
         self.api_key = api_key
+        self.quota_used = 0  # このインスタンスでの実測消費ユニット
         try:
             self.youtube = build("youtube", "v3", developerKey=api_key)
         except Exception as exc:
             raise ValueError(f"YouTube API の初期化に失敗しました: {exc}") from exc
 
+    def _call(self, endpoint: str, func):
+        """API呼び出しをラップし、成功時にクォータ消費を実測記録する。"""
+        result = _api_call_with_retry(func)
+        self.quota_used += self.QUOTA_COSTS.get(endpoint, 1)
+        return result
+
     def validate_api_key(self) -> bool:
         """Make a cheap API call to verify the key works. Raises on failure."""
         try:
-            _api_call_with_retry(
+            self._call(
+                "videos.list",
                 lambda: self.youtube.videos().list(
                     part="id", id="dQw4w9WgXcQ", maxResults=1
                 ).execute()
@@ -176,7 +194,8 @@ class YouTubeClient:
                 return identifier
 
             if info_type == "video":
-                resp = _api_call_with_retry(
+                resp = self._call(
+                    "videos.list",
                     lambda: self.youtube.videos().list(
                         part="snippet", id=identifier
                     ).execute()
@@ -188,7 +207,8 @@ class YouTubeClient:
 
             if info_type == "handle":
                 try:
-                    resp = _api_call_with_retry(
+                    resp = self._call(
+                        "channels.list",
                         lambda: self.youtube.channels().list(
                             part="id", forHandle=identifier
                         ).execute()
@@ -200,7 +220,8 @@ class YouTubeClient:
 
             if info_type == "username":
                 try:
-                    resp = _api_call_with_retry(
+                    resp = self._call(
+                        "channels.list",
                         lambda: self.youtube.channels().list(
                             part="id", forUsername=identifier
                         ).execute()
@@ -213,7 +234,8 @@ class YouTubeClient:
             # Fallback: search for the channel
             if info_type in ("handle", "custom", "username"):
                 query = f"@{identifier}" if info_type == "handle" else identifier
-                resp = _api_call_with_retry(
+                resp = self._call(
+                    "search.list",
                     lambda: self.youtube.search().list(
                         part="snippet", q=query, type="channel", maxResults=1
                     ).execute()
@@ -239,7 +261,8 @@ class YouTubeClient:
         Raises ValueError if the video does not exist.
         """
         try:
-            resp = _api_call_with_retry(
+            resp = self._call(
+                "videos.list",
                 lambda: self.youtube.videos().list(
                     part="snippet", id=video_id
                 ).execute()
@@ -324,7 +347,8 @@ class YouTubeClient:
             progress_callback("チャンネル情報を取得中...")
 
         try:
-            ch_resp = _api_call_with_retry(
+            ch_resp = self._call(
+                "channels.list",
                 lambda: self.youtube.channels().list(
                     part="contentDetails", id=channel_id
                 ).execute()
@@ -353,7 +377,8 @@ class YouTubeClient:
 
             try:
                 _next = next_page  # capture for lambda
-                resp = _api_call_with_retry(
+                resp = self._call(
+                    "playlistItems.list",
                     lambda: self.youtube.playlistItems().list(
                         part="snippet",
                         playlistId=uploads_id,
@@ -419,7 +444,8 @@ class YouTubeClient:
                 params["pageToken"] = next_page
 
             try:
-                resp = _api_call_with_retry(
+                resp = self._call(
+                    "search.list",
                     lambda: self.youtube.search().list(**params).execute()
                 )
             except HttpError as e:
@@ -474,7 +500,8 @@ class YouTubeClient:
 
             try:
                 _next = next_page
-                resp = _api_call_with_retry(
+                resp = self._call(
+                    "commentThreads.list",
                     lambda: self.youtube.commentThreads().list(
                         part="snippet",
                         videoId=video_id,

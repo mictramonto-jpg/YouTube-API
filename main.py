@@ -640,6 +640,19 @@ class YouTubeCommentExtractorApp:
         self.count_label = ttk.Label(bar, text="  件数: 0", style="Status.TLabel")
         self.count_label.pack(side=tk.LEFT)
 
+        # 前回稼働の実消費クォータ表示
+        self.quota_result_var = tk.StringVar(value="")
+        self.quota_result_label = ttk.Label(bar, textvariable=self.quota_result_var,
+                                            style="Status.TLabel")
+        self.quota_result_label.pack(side=tk.LEFT, padx=(24, 0))
+        Tooltip(self.quota_result_label,
+                "直前の稼働で実際に消費したYouTube APIクォータ量 (実測値)。\n\n"
+                "・1日の無料枠: 10,000 units\n"
+                "・太平洋時間 0:00 (日本時間 17:00) にリセット\n\n"
+                "※このアプリが把握できるのは「このアプリでの消費」のみ。\n"
+                "  他のツールと併用している場合の実残量は\n"
+                "  Google Cloud Console でご確認ください。")
+
         self.export_btn = ttk.Button(bar, text="💾 Excelに名前を付けて保存",
                                       command=self.save_to_excel, state=tk.DISABLED)
         self.export_btn.pack(side=tk.RIGHT)
@@ -1376,13 +1389,27 @@ class YouTubeCommentExtractorApp:
 
             put({"type": "progress", "value": 100})
             self._skipped_count = skipped
+            self._consumed_quota = client.quota_used
             put({"type": "done", "error": None})
 
         except APIError as exc:
+            # エラー時でもそこまでの消費量は保持
+            try:
+                self._consumed_quota = client.quota_used
+            except (NameError, AttributeError):
+                self._consumed_quota = 0
             put({"type": "done", "error": f"APIエラー: {exc}"})
         except ValueError as exc:
+            try:
+                self._consumed_quota = client.quota_used
+            except (NameError, AttributeError):
+                self._consumed_quota = 0
             put({"type": "done", "error": str(exc)})
         except Exception as exc:
+            try:
+                self._consumed_quota = client.quota_used
+            except (NameError, AttributeError):
+                self._consumed_quota = 0
             put({"type": "done", "error": f"予期しないエラー: {type(exc).__name__}: {exc}"})
 
     # ------------------------------------------------------------------
@@ -1392,20 +1419,34 @@ class YouTubeCommentExtractorApp:
     def _on_done(self, error):
         self._set_running_state(False)
 
+        # 実消費クォータ (ワーカーから通知された実測値)
+        consumed = getattr(self, "_consumed_quota", 0)
+        quota_text = f" | 消費API: {consumed:,} units" if consumed else ""
+
+        # 結果エリアの消費クォータ表示を更新
+        if hasattr(self, "quota_result_var"):
+            if consumed:
+                self.quota_result_var.set(f"📊 消費API: {consumed:,} units / 無料枠 10,000")
+            else:
+                self.quota_result_var.set("")
+
         if error:
-            self.status_var.set(f"エラー: {error}")
+            self.status_var.set(f"エラー: {error}{quota_text}")
             messagebox.showerror(
                 "エラー",
                 f"処理中にエラーが発生しました:\n\n{error}\n\n"
+                f"消費したAPIクォータ: {consumed:,} units\n"
                 "取得済みのデータはテーブルに保持されています。\n"
                 "「💾 Excelに名前を付けて保存」から保存できます。",
             )
         elif self.cancelled:
             self.status_var.set(
-                f"⏸ 停止しました (取得済み: {len(self.results)} 件)"
+                f"⏸ 停止しました (取得済み: {len(self.results)} 件){quota_text}"
             )
         else:
-            self.status_var.set(f"✓ 完了！ 合計 {len(self.results)} 件のコメントを取得しました")
+            self.status_var.set(
+                f"✓ 完了！ 合計 {len(self.results)} 件のコメントを取得しました{quota_text}"
+            )
 
         if self.results:
             self._auto_save()
