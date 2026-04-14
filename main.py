@@ -299,6 +299,11 @@ class YouTubeCommentExtractorApp:
         style.configure("Stop.TButton", font=base_font, padding=6)
         style.configure("Link.TButton", font=base_font, padding=4, foreground=C_ACCENT_DK)
 
+        style.configure("Panel.TRadiobutton", background=C_PANEL,
+                        foreground=C_TEXT, font=base_font)
+        style.map("Panel.TRadiobutton",
+                  background=[("active", C_PANEL)])
+
         style.configure("Results.Treeview",
                         rowheight=28, font=base_font, fieldbackground="white",
                         background="white", foreground=C_TEXT)
@@ -446,6 +451,38 @@ class YouTubeCommentExtractorApp:
                                     command=lambda: self.url_entry.set_value(""))
         clear_url_btn.pack(side=tk.LEFT, padx=(4, 0))
 
+        # === Row 2c: Extraction Mode (channel-wide vs single-video) ===
+        r2c = ttk.Frame(inner, style="Panel.TFrame")
+        r2c.pack(fill=tk.X, pady=(0, 12))
+        ttk.Label(r2c, text="取得範囲:", style="Panel.TLabel").pack(side=tk.LEFT,
+                                                                    padx=(0, 10))
+
+        # "channel" = URL のチャンネル内の複数動画から取得
+        # "video"   = URL で指定した動画のみから取得
+        self.extract_mode_var = tk.StringVar(value="channel")
+
+        rb_channel = ttk.Radiobutton(
+            r2c, text="チャンネル全体 (URLからチャンネルを特定し複数動画を対象)",
+            variable=self.extract_mode_var, value="channel",
+            style="Panel.TRadiobutton",
+            command=self._on_mode_changed,
+        )
+        rb_channel.pack(side=tk.LEFT, padx=(0, 20))
+        Tooltip(rb_channel,
+                "入力URLのチャンネルから「リサーチする動画数」に指定した件数の動画を取得。\n"
+                "チャンネルタブURL/動画URLのどちらでもOK (動画URLの場合はそのチャンネル)")
+
+        rb_video = ttk.Radiobutton(
+            r2c, text="指定した動画のみ (動画URL必須)",
+            variable=self.extract_mode_var, value="video",
+            style="Panel.TRadiobutton",
+            command=self._on_mode_changed,
+        )
+        rb_video.pack(side=tk.LEFT)
+        Tooltip(rb_video,
+                "URLで指定した1本の動画のコメントだけを取得します。\n"
+                "動画URL (/watch?v=...、/shorts/...、/live/...) を入力してください。")
+
         # === Row 3: Filters (3 inputs) ===
         r3 = ttk.Frame(inner, style="Panel.TFrame")
         r3.pack(fill=tk.X, pady=(0, 4))
@@ -457,15 +494,18 @@ class YouTubeCommentExtractorApp:
         # リサーチする動画数
         f1 = ttk.Frame(r3b, style="Panel.TFrame")
         f1.pack(side=tk.LEFT, padx=(0, 24))
-        ttk.Label(f1, text="リサーチする動画数", style="Panel.TLabel").pack(anchor="w")
+        self.max_videos_label = ttk.Label(f1, text="リサーチする動画数",
+                                          style="Panel.TLabel")
+        self.max_videos_label.pack(anchor="w")
         self.max_videos_var = tk.StringVar(value="30")
-        e_videos = ttk.Entry(f1, textvariable=self.max_videos_var, width=10,
-                              font=("", 10), justify="right")
-        e_videos.pack(anchor="w", pady=(2, 0))
-        Tooltip(e_videos,
+        self.e_videos = ttk.Entry(f1, textvariable=self.max_videos_var, width=10,
+                                   font=("", 10), justify="right")
+        self.e_videos.pack(anchor="w", pady=(2, 0))
+        Tooltip(self.e_videos,
                 "上位表示されている動画から順に、この件数までを対象にします。\n"
                 "例: 30 と入力すると、上位30件の動画のコメントを処理します。\n"
-                "URLの動画数が少ない場合は、その件数まで処理します。")
+                "URLの動画数が少ない場合は、その件数まで処理します。\n"
+                "※「指定した動画のみ」モードでは無効になります。")
 
         # 高評価数の下限
         f2 = ttk.Frame(r3b, style="Panel.TFrame")
@@ -750,6 +790,16 @@ class YouTubeCommentExtractorApp:
     # Helpers
     # ------------------------------------------------------------------
 
+    def _on_mode_changed(self):
+        """取得範囲のラジオボタン変更時。動画数入力欄の有効/無効を切り替える。"""
+        if self.extract_mode_var.get() == "video":
+            # 動画のみモード: 動画数入力は使わない
+            self.e_videos.configure(state=tk.DISABLED)
+            self.max_videos_label.configure(foreground=C_MUTED)
+        else:
+            self.e_videos.configure(state=tk.NORMAL)
+            self.max_videos_label.configure(foreground=C_TEXT)
+
     def _toggle_api_key(self):
         if self._key_visible:
             self.api_key_entry.config(show="●")
@@ -848,13 +898,20 @@ class YouTubeCommentExtractorApp:
             self.url_entry.focus_set()
             return
 
-        try:
-            max_videos = int(self.max_videos_var.get().strip() or "30")
-            if max_videos <= 0:
-                raise ValueError
-        except ValueError:
-            messagebox.showwarning("入力エラー", "リサーチする動画数は正の整数で入力してください。")
-            return
+        mode = self.extract_mode_var.get()  # "channel" or "video"
+
+        if mode == "channel":
+            try:
+                max_videos = int(self.max_videos_var.get().strip() or "30")
+                if max_videos <= 0:
+                    raise ValueError
+            except ValueError:
+                messagebox.showwarning("入力エラー",
+                                       "リサーチする動画数は正の整数で入力してください。")
+                return
+        else:
+            # 動画のみモードでは max_videos は使わない
+            max_videos = 1
 
         try:
             min_likes = int(self.min_likes_var.get().strip() or "0")
@@ -880,7 +937,7 @@ class YouTubeCommentExtractorApp:
 
         self.worker_thread = threading.Thread(
             target=self._worker,
-            args=(api_key, url, max_videos, min_likes, text_filter),
+            args=(api_key, url, max_videos, min_likes, text_filter, mode),
             daemon=True,
         )
         self.worker_thread.start()
@@ -895,7 +952,7 @@ class YouTubeCommentExtractorApp:
     # Background worker
     # ------------------------------------------------------------------
 
-    def _worker(self, api_key, url, max_videos, min_likes, text_filter):
+    def _worker(self, api_key, url, max_videos, min_likes, text_filter, mode="channel"):
         put = self.msg_queue.put
         try:
             put({"type": "status", "text": "API接続中..."})
@@ -907,18 +964,33 @@ class YouTubeCommentExtractorApp:
             put({"type": "status", "text": "URL解析中..."})
             url_info = client.parse_url(url)
 
-            put({"type": "status", "text": "チャンネル情報取得中..."})
-            channel_id = client.resolve_channel_id(url_info)
-            tab = url_info["tab"]
+            # --- モード分岐 ---
+            if mode == "video":
+                # 「指定した動画のみ」モード
+                if url_info["type"] != "video":
+                    raise ValueError(
+                        "「指定した動画のみ」モードでは動画URLを入力してください。\n"
+                        "例: https://www.youtube.com/watch?v=VIDEO_ID\n"
+                        "    https://www.youtube.com/shorts/VIDEO_ID\n"
+                        "    https://www.youtube.com/live/VIDEO_ID"
+                    )
+                put({"type": "status", "text": "動画情報を取得中..."})
+                video = client.get_video_details(url_info["id"])
+                videos = [video]
+            else:
+                # 「チャンネル全体」モード
+                put({"type": "status", "text": "チャンネル情報取得中..."})
+                channel_id = client.resolve_channel_id(url_info)
+                tab = url_info["tab"]
 
-            def _vid_progress(msg):
-                put({"type": "status", "text": msg})
+                def _vid_progress(msg):
+                    put({"type": "status", "text": msg})
 
-            videos = client.get_videos(
-                channel_id, tab, max_videos,
-                progress_callback=_vid_progress,
-                cancel_check=lambda: self.cancelled,
-            )
+                videos = client.get_videos(
+                    channel_id, tab, max_videos,
+                    progress_callback=_vid_progress,
+                    cancel_check=lambda: self.cancelled,
+                )
 
             if self.cancelled:
                 put({"type": "done", "error": None})

@@ -228,6 +228,39 @@ class YouTubeClient:
         raise ValueError(f"チャンネルが見つかりません: {identifier}")
 
     # ------------------------------------------------------------------
+    # Single video details (for single-video mode)
+    # ------------------------------------------------------------------
+
+    def get_video_details(self, video_id: str) -> Dict:
+        """
+        指定した1本の動画のメタデータ (タイトル・投稿日・投稿者名) を取得。
+
+        Returns dict with: video_id, title, published_at, channel_title, url
+        Raises ValueError if the video does not exist.
+        """
+        try:
+            resp = _api_call_with_retry(
+                lambda: self.youtube.videos().list(
+                    part="snippet", id=video_id
+                ).execute()
+            )
+        except HttpError as e:
+            raise APIError(e) from e
+
+        items = resp.get("items", [])
+        if not items:
+            raise ValueError(f"動画が見つかりません: {video_id}")
+
+        snippet = items[0].get("snippet", {})
+        return {
+            "video_id": video_id,
+            "title": snippet.get("title", ""),
+            "published_at": snippet.get("publishedAt", ""),
+            "channel_title": snippet.get("channelTitle", ""),
+            "url": f"https://www.youtube.com/watch?v={video_id}",
+        }
+
+    # ------------------------------------------------------------------
     # Video listing
     # ------------------------------------------------------------------
 
