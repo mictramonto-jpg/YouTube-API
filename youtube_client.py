@@ -54,17 +54,55 @@ def _api_call_with_retry(func, max_retries: int = 3, base_delay: float = 1.0):
 class YouTubeClient:
     """YouTube Data API v3 wrapper for video and comment extraction."""
 
-    def __init__(self, api_key: str):
+    # YouTube Data API v3 のエンドポイント別クォータコスト (公式値)
+    # https://developers.google.com/youtube/v3/determine_quota_cost
+    QUOTA_COSTS = {
+        "videos.list":         1,
+        "channels.list":       1,
+        "playlistItems.list":  1,
+        "commentThreads.list": 1,
+        "search.list":       100,
+    }
+
+    # デフォルトの1日あたり無料クォータ (Google Cloud Console で申請すれば増量可)
+    DAILY_FREE_QUOTA = 10_000
+
+    def __init__(self, api_key: str, quota_callback: Optional[Callable[[int, str], None]] = None):
+        """
+        Args:
+            api_key: YouTube Data API v3 Key
+            quota_callback: API呼び出しのたびに (累計消費ユニット, 最後の呼び出し名) を
+                            通知するコールバック (GUI側の表示更新に使用)
+        """
         self.api_key = api_key
+        self.quota_used = 0  # セッション内累計消費ユニット
+        self.quota_callback = quota_callback
         try:
             self.youtube = build("youtube", "v3", developerKey=api_key)
         except Exception as exc:
             raise ValueError(f"YouTube API の初期化に失敗しました: {exc}") from exc
 
+    def _track_quota(self, endpoint: str):
+        """API呼び出し時にクォータ消費を記録。"""
+        cost = self.QUOTA_COSTS.get(endpoint, 1)
+        self.quota_used += cost
+        if self.quota_callback:
+            try:
+                self.quota_callback(self.quota_used, endpoint)
+            except Exception:
+                pass  # コールバックの失敗はAPI処理に影響させない
+
+    def _call(self, endpoint: str, func):
+        """クォータ追跡付きのAPI呼び出しラッパー。"""
+        result = _api_call_with_retry(func)
+        self._track_quota(endpoint)
+        return result
+
     def validate_api_key(self) -> bool:
         """Make a cheap API call to verify the key works. Raises on failure."""
         try:
-            _api_call_with_retry(
+            self._call(
+                "videos.list",
                 lambda: self.youtube.videos().list(
                     part="id", id="dQw4w9WgXcQ", maxResults=1
                 ).execute()
@@ -176,7 +214,8 @@ class YouTubeClient:
                 return identifier
 
             if info_type == "video":
-                resp = _api_call_with_retry(
+                resp = self._call(
+                    "videos.list",
                     lambda: self.youtube.videos().list(
                         part="snippet", id=identifier
                     ).execute()
@@ -188,7 +227,8 @@ class YouTubeClient:
 
             if info_type == "handle":
                 try:
-                    resp = _api_call_with_retry(
+                    resp = self._call(
+                        "channels.list",
                         lambda: self.youtube.channels().list(
                             part="id", forHandle=identifier
                         ).execute()
@@ -200,7 +240,8 @@ class YouTubeClient:
 
             if info_type == "username":
                 try:
-                    resp = _api_call_with_retry(
+                    resp = self._call(
+                        "channels.list",
                         lambda: self.youtube.channels().list(
                             part="id", forUsername=identifier
                         ).execute()
@@ -213,7 +254,8 @@ class YouTubeClient:
             # Fallback: search for the channel
             if info_type in ("handle", "custom", "username"):
                 query = f"@{identifier}" if info_type == "handle" else identifier
-                resp = _api_call_with_retry(
+                resp = self._call(
+                    "search.list",
                     lambda: self.youtube.search().list(
                         part="snippet", q=query, type="channel", maxResults=1
                     ).execute()
@@ -239,7 +281,8 @@ class YouTubeClient:
         Raises ValueError if the video does not exist.
         """
         try:
-            resp = _api_call_with_retry(
+            resp = self._call(
+                "videos.list",
                 lambda: self.youtube.videos().list(
                     part="snippet", id=video_id
                 ).execute()
@@ -324,7 +367,8 @@ class YouTubeClient:
             progress_callback("チャンネル情報を取得中...")
 
         try:
-            ch_resp = _api_call_with_retry(
+            ch_resp = self._call(
+                "channels.list",
                 lambda: self.youtube.channels().list(
                     part="contentDetails", id=channel_id
                 ).execute()
@@ -353,7 +397,8 @@ class YouTubeClient:
 
             try:
                 _next = next_page  # capture for lambda
-                resp = _api_call_with_retry(
+                resp = self._call(
+                    "playlistItems.list",
                     lambda: self.youtube.playlistItems().list(
                         part="snippet",
                         playlistId=uploads_id,
@@ -419,7 +464,8 @@ class YouTubeClient:
                 params["pageToken"] = next_page
 
             try:
-                resp = _api_call_with_retry(
+                resp = self._call(
+                    "search.list",
                     lambda: self.youtube.search().list(**params).execute()
                 )
             except HttpError as e:
@@ -474,7 +520,8 @@ class YouTubeClient:
 
             try:
                 _next = next_page
-                resp = _api_call_with_retry(
+                resp = self._call(
+                    "commentThreads.list",
                     lambda: self.youtube.commentThreads().list(
                         part="snippet",
                         videoId=video_id,
@@ -517,6 +564,96 @@ class YouTubeClient:
                 break
 
         return comments
+
+
+# ------------------------------------------------------------------
+# Quota estimation (pre-run cost calculator)
+# ------------------------------------------------------------------
+
+def estimate_quota_cost(
+    num_urls: int,
+    mode: str = "video",
+    max_videos_per_channel: int = 30,
+    order: str = "date",
+    tab_hint: str = "videos",
+    avg_comments_per_video: int = 500,
+) -> Dict:
+    """
+    入力条件から、1回の稼働でおおよそ消費するクォータ量を見積もる。
+
+    Returns:
+        {
+            "total": 合計ユニット,
+            "breakdown": [(ラベル, ユニット), ...] 内訳,
+            "per_video_avg": 動画1本あたりの平均消費,
+        }
+    """
+    breakdown = []
+    total = 0
+
+    # 1. APIキー検証 (videos.list × 1)
+    breakdown.append(("APIキー検証 (videos.list)", 1))
+    total += 1
+
+    if mode == "video":
+        # 各URLについて動画詳細を1回取得
+        cost = num_urls * 1
+        breakdown.append((f"動画情報取得 (videos.list × {num_urls})", cost))
+        total += cost
+
+        # コメント取得: 1動画あたり平均 ceil(avg/100) ページ
+        pages_per_video = max(1, (avg_comments_per_video + 99) // 100)
+        cost = num_urls * pages_per_video * 1
+        breakdown.append((
+            f"コメント取得 (commentThreads.list × {num_urls}動画 × {pages_per_video}ページ)",
+            cost,
+        ))
+        total += cost
+
+    else:  # channel mode
+        # 各URLごとにチャンネル特定
+        cost = num_urls * 1  # channels.list or videos.list
+        breakdown.append((f"チャンネル特定 (channels.list × {num_urls})", cost))
+        total += cost
+
+        # 動画リスト取得
+        pages = max(1, (max_videos_per_channel + 49) // 50)
+        if tab_hint == "videos" and order == "date":
+            # uploads playlist (1 unit/page)
+            cost = num_urls * pages * 1
+            breakdown.append((
+                f"動画リスト取得 (playlistItems.list × {num_urls}ch × {pages}p)",
+                cost,
+            ))
+        else:
+            # search.list (100 units/page) - 高コスト
+            cost = num_urls * pages * 100
+            breakdown.append((
+                f"動画リスト取得 ⚠️ search.list × {num_urls}ch × {pages}p = 100units/req",
+                cost,
+            ))
+        total += cost
+
+        # コメント取得
+        total_videos = num_urls * max_videos_per_channel
+        pages_per_video = max(1, (avg_comments_per_video + 99) // 100)
+        cost = total_videos * pages_per_video * 1
+        breakdown.append((
+            f"コメント取得 (commentThreads.list × {total_videos}動画 × {pages_per_video}p)",
+            cost,
+        ))
+        total += cost
+
+    if mode == "video":
+        per_video = total / max(1, num_urls)
+    else:
+        per_video = total / max(1, num_urls * max_videos_per_channel)
+
+    return {
+        "total": total,
+        "breakdown": breakdown,
+        "per_video_avg": per_video,
+    }
 
 
 # ------------------------------------------------------------------

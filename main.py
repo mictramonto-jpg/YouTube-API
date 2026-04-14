@@ -27,7 +27,8 @@ except ImportError:
 
 try:
     from youtube_client import (
-        YouTubeClient, APIError, format_date, format_datetime
+        YouTubeClient, APIError, format_date, format_datetime,
+        estimate_quota_cost,
     )
 except ImportError as e:
     print(f"Error: youtube_client.py を読み込めません: {e}")
@@ -226,6 +227,8 @@ class YouTubeCommentExtractorApp:
 
         # 初期モードに合わせてUI (動画数・並び順) の有効/無効を設定
         self._on_mode_changed()
+        # 初回のクォータ見積り表示
+        self._update_quota_estimate()
 
         # キーボードショートカット
         self.root.bind("<F1>", lambda e: self.show_api_guide())
@@ -347,6 +350,11 @@ class YouTubeCommentExtractorApp:
                               command=lambda: webbrowser.open(API_KEY_GUIDE_URL))
         help_menu.add_command(label="YouTube Data API を有効化",
                               command=lambda: webbrowser.open(API_LIBRARY_URL))
+        help_menu.add_separator()
+        help_menu.add_command(label="APIクォータ情報 (想定消費 / 累計)",
+                              command=self.show_quota_detail)
+        help_menu.add_command(label="実クォータ残量をCloud Consoleで確認",
+                              command=self._open_quota_console)
         help_menu.add_separator()
         help_menu.add_command(label="使い方", command=self.show_usage)
         help_menu.add_command(label="バージョン情報", command=self.show_about)
@@ -536,6 +544,8 @@ class YouTubeCommentExtractorApp:
         self.e_videos = ttk.Entry(f1, textvariable=self.max_videos_var, width=10,
                                    font=("", 10), justify="right")
         self.e_videos.pack(anchor="w", pady=(2, 0))
+        self.e_videos.bind("<KeyRelease>",
+                           lambda e: self._update_quota_estimate(), add="+")
         Tooltip(self.e_videos,
                 "上位表示されている動画から順に、この件数までを対象にします。\n"
                 "例: 30 と入力すると、上位30件の動画のコメントを処理します。\n"
@@ -859,6 +869,34 @@ class YouTubeCommentExtractorApp:
         ttk.Label(sframe, textvariable=self.elapsed_var,
                   style="Status.TLabel").pack(side=tk.RIGHT)
 
+        # APIクォータ表示行
+        qframe = ttk.Frame(frame)
+        qframe.pack(fill=tk.X, pady=(4, 0))
+
+        ttk.Label(qframe, text="📊 APIクォータ:",
+                  style="Status.TLabel").pack(side=tk.LEFT)
+
+        # 消費量 / 1日無料枠
+        self.quota_var = tk.StringVar(
+            value=f"0 / 10,000 units (1日の無料枠、このアプリ起動中の累計)"
+        )
+        self.quota_label = ttk.Label(qframe, textvariable=self.quota_var,
+                                     style="Status.TLabel")
+        self.quota_label.pack(side=tk.LEFT, padx=(6, 0))
+
+        # 想定コスト表示
+        self.quota_estimate_var = tk.StringVar(value="")
+        ttk.Label(qframe, textvariable=self.quota_estimate_var,
+                  style="StatusWarn.TLabel").pack(side=tk.LEFT, padx=(16, 0))
+
+        # ボタン: Cloud Console で実残量確認
+        ttk.Button(qframe, text="🔍 実残量をCloud Consoleで確認",
+                   style="Link.TButton",
+                   command=self._open_quota_console).pack(side=tk.RIGHT)
+
+        # 累計クォータ (セッション)
+        self._session_quota = 0
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -878,12 +916,138 @@ class YouTubeCommentExtractorApp:
             if hasattr(self, "order_combo"):
                 self.order_combo.configure(state="readonly")
                 self.order_label.configure(foreground=C_TEXT)
+        # 想定クォータ表示を更新
+        if hasattr(self, "quota_estimate_var"):
+            self._update_quota_estimate()
+
+    # ------------------------------------------------------------------
+    # クォータ表示・計算
+    # ------------------------------------------------------------------
+
+    def _open_quota_console(self):
+        """Google Cloud ConsoleのYouTube Data APIクォータページを開く。"""
+        webbrowser.open(
+            "https://console.cloud.google.com/apis/api/youtube.googleapis.com/quotas"
+        )
+
+    def _on_quota_used(self, used_units: int, endpoint: str):
+        """API呼び出しごとに呼ばれるコールバック。メッセージキュー経由でGUI更新。"""
+        # 注: ワーカースレッドから呼ばれるので直接GUIには触らない
+        self.msg_queue.put({
+            "type": "quota",
+            "used": used_units,
+            "endpoint": endpoint,
+        })
+
+    def _update_quota_display(self, used: int):
+        """ステータスバーのクォータ表示を更新。"""
+        self._session_quota = used
+        remaining_approx = max(0, 10_000 - used)
+        pct = (used / 10_000) * 100
+
+        # 残量が少なくなったら警告色
+        if pct >= 90:
+            prefix = "⚠️ "
+            style = "StatusWarn.TLabel"
+        elif pct >= 70:
+            prefix = "⚡ "
+            style = "StatusWarn.TLabel"
+        else:
+            prefix = ""
+            style = "Status.TLabel"
+
+        self.quota_var.set(
+            f"{prefix}{used:,} units 消費 / "
+            f"1日無料枠 10,000 units "
+            f"(起動中の累計。無料枠の実残量はCloud Consoleで確認)"
+        )
+        try:
+            self.quota_label.configure(style=style)
+        except tk.TclError:
+            pass
+
+    def _update_quota_estimate(self):
+        """入力条件に基づいて想定コストを計算し、表示を更新。"""
+        try:
+            urls = self._get_all_urls() if hasattr(self, "url_entries") else []
+            num_urls = max(1, len(urls))
+            mode = self.extract_mode_var.get()
+            max_videos = int(self.max_videos_var.get() or "30")
+            order = self.order_var.get() if hasattr(self, "order_var") else "date"
+
+            # タブのヒントを先頭URLから推測 (失敗したらvideosとして計算)
+            tab_hint = "videos"
+            if urls:
+                try:
+                    from youtube_client import YouTubeClient as _YC
+                    # 簡易URL解析 (ダミーキーでインスタンス化せずに静的判定)
+                    u = urls[0].lower()
+                    if "/shorts/" in u:
+                        tab_hint = "shorts"
+                    elif "/streams" in u or "/live" in u:
+                        tab_hint = "streams"
+                except Exception:
+                    pass
+
+            est = estimate_quota_cost(
+                num_urls=num_urls,
+                mode=mode,
+                max_videos_per_channel=max_videos,
+                order=order,
+                tab_hint=tab_hint,
+            )
+            total = est["total"]
+            self.quota_estimate_var.set(
+                f"│ 今回の想定消費: 約 {total:,} units "
+                f"({total / 10_000 * 100:.1f}% of 無料枠)"
+            )
+        except Exception:
+            self.quota_estimate_var.set("")
+
+    def show_quota_detail(self):
+        """詳細なクォータ情報ダイアログを表示。"""
+        urls = self._get_all_urls()
+        num_urls = max(1, len(urls))
+        mode = self.extract_mode_var.get()
+        try:
+            max_videos = int(self.max_videos_var.get() or "30")
+        except ValueError:
+            max_videos = 30
+        order = self.order_var.get() if hasattr(self, "order_var") else "date"
+
+        est = estimate_quota_cost(
+            num_urls=num_urls,
+            mode=mode,
+            max_videos_per_channel=max_videos,
+            order=order,
+        )
+
+        breakdown_text = "\n".join(
+            f"  ・{label}: {cost:,} units"
+            for label, cost in est["breakdown"]
+        )
+
+        msg = (
+            "【APIクォータ情報】\n\n"
+            f"■ 現在の入力条件での想定消費: 約 {est['total']:,} units\n"
+            f"{breakdown_text}\n\n"
+            f"■ このアプリ起動中の累計消費: {self._session_quota:,} units\n\n"
+            "■ YouTube Data API v3 の無料枠: 1日あたり 10,000 units\n"
+            "  (太平洋時間0:00 = 日本時間17:00 にリセット)\n\n"
+            "■ 実際の残量確認:\n"
+            "  YouTube APIは残量取得エンドポイントを提供していません。\n"
+            "  実残量はGoogle Cloud Consoleで確認してください。\n\n"
+            "■ コメント本体取得は動画ごとのコメント数に依存するため、\n"
+            "  上記見積りはあくまで目安です (平均500コメント/動画想定)。"
+        )
+        messagebox.showinfo("APIクォータ情報", msg)
 
     def _on_order_changed(self, _evt=None):
-        """並び順コンボボックス変更時。表示ラベルから内部値を更新。"""
+        """並び順コンボボックス変更時。表示ラベルから内部値を更新し、見積りも更新。"""
         label = self.order_display_var.get()
         value = self._order_label_to_value.get(label, "date")
         self.order_var.set(value)
+        self._update_quota_estimate()
 
     # ------------------------------------------------------------------
     # 複数URL対応 (+ URL追加 / CSV一括読込)
@@ -902,6 +1066,13 @@ class YouTubeCommentExtractorApp:
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         if value:
             entry.set_value(value)
+        # URLが入力/編集されたときにクォータ見積りを更新
+        entry.bind("<KeyRelease>",
+                   lambda e: self._update_quota_estimate(),
+                   add="+")
+        entry.bind("<FocusOut>",
+                   lambda e: self._update_quota_estimate(),
+                   add="+")
         Tooltip(entry,
                 "対応形式:\n"
                 "・動画URL: https://www.youtube.com/watch?v=xxx\n"
@@ -1150,6 +1321,8 @@ class YouTubeCommentExtractorApp:
                     self.results.append(msg["data"])
                     self._add_row_to_tree(msg["data"])
                     self.count_label.config(text=f"  件数: {len(self.results)}")
+                elif kind == "quota":
+                    self._update_quota_display(msg.get("used", 0))
                 elif kind == "done":
                     self._on_done(msg.get("error"))
         except queue.Empty:
@@ -1249,7 +1422,7 @@ class YouTubeCommentExtractorApp:
         put = self.msg_queue.put
         try:
             put({"type": "status", "text": "API接続中..."})
-            client = YouTubeClient(api_key)
+            client = YouTubeClient(api_key, quota_callback=self._on_quota_used)
 
             put({"type": "status", "text": "APIキーを検証中..."})
             client.validate_api_key()
