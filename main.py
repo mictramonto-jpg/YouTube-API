@@ -697,17 +697,103 @@ class YouTubeCommentExtractorApp:
                 "この数値以上の高評価を持つコメントのみを出力します。\n"
                 "0 または空欄でフィルタなし (全コメント対象)。")
 
-        # 含まれる文字
+        # 含まれる文字 + AND/OR モード
         f3 = ttk.Frame(r3b, style="Panel.TFrame")
         f3.pack(side=tk.LEFT, padx=(0, 24))
-        ttk.Label(f3, text="コメントに含まれる文字", style="Panel.TLabel").pack(anchor="w")
-        self.text_filter_entry = PlaceholderEntry(f3, placeholder="例: : (コロン)",
-                                                   width=24, font=("", 10))
-        self.text_filter_entry.pack(anchor="w", pady=(2, 0))
+        ttk.Label(f3, text="コメントに含まれる文字 (カンマ/空白区切りで複数可)",
+                  style="Panel.TLabel").pack(anchor="w")
+        f3row = ttk.Frame(f3, style="Panel.TFrame")
+        f3row.pack(anchor="w", pady=(2, 0))
+        self.text_filter_entry = PlaceholderEntry(
+            f3row, placeholder="例: :,おもしろ,感動 (カンマ区切り)",
+            width=28, font=("", 10))
+        self.text_filter_entry.pack(side=tk.LEFT)
+        self.text_filter_mode_var = tk.StringVar(value="AND")
+        self.text_filter_mode_combo = ttk.Combobox(
+            f3row, textvariable=self.text_filter_mode_var,
+            values=["AND", "OR"], state="readonly", width=5, font=("", 10),
+        )
+        self.text_filter_mode_combo.pack(side=tk.LEFT, padx=(4, 0))
+        Tooltip(self.text_filter_mode_combo,
+                "AND: 全てのキーワードを含むコメントのみ (例: ':' と '感動' の両方含む)\n"
+                "OR : いずれかのキーワードを含むコメント (例: ':' か '感動' のどちらか)")
         Tooltip(self.text_filter_entry,
-                "この文字列を含むコメントのみを出力します。\n"
+                "複数のキーワードはカンマ(,)または空白で区切ります。\n"
+                "AND/OR で条件を切り替えられます。\n"
                 "空欄でフィルタなし (全コメント対象)。\n"
-                "例: ':' と入力すると、コロンを含むコメント (タイムスタンプ付き等) のみ")
+                "例: ':' と入力 → コロンを含むコメント (タイムスタンプ付き)\n"
+                "例: 'おもしろ,感動' + OR → どちらかを含むコメント")
+
+        # 投稿者名フィルタ
+        f4 = ttk.Frame(r3b, style="Panel.TFrame")
+        f4.pack(side=tk.LEFT, padx=(0, 24))
+        ttk.Label(f4, text="投稿者名に含まれる文字",
+                  style="Panel.TLabel").pack(anchor="w")
+        self.author_filter_entry = PlaceholderEntry(
+            f4, placeholder="例: @channel",
+            width=16, font=("", 10))
+        self.author_filter_entry.pack(anchor="w", pady=(2, 0))
+        Tooltip(self.author_filter_entry,
+                "投稿者名にこの文字列を含むコメントのみを出力します (大文字小文字を区別しない)。\n"
+                "空欄でフィルタなし。")
+
+        # === Row 3c: 日付範囲フィルタ + 返信・重複除去オプション ===
+        r3c = ttk.Frame(inner, style="Panel.TFrame")
+        r3c.pack(fill=tk.X, pady=(10, 0))
+
+        # 日付 From / To
+        f_date = ttk.Frame(r3c, style="Panel.TFrame")
+        f_date.pack(side=tk.LEFT, padx=(0, 24))
+        ttk.Label(f_date, text="コメント投稿日の範囲 (YYYY-MM-DD)",
+                  style="Panel.TLabel").pack(anchor="w")
+        f_date_row = ttk.Frame(f_date, style="Panel.TFrame")
+        f_date_row.pack(anchor="w", pady=(2, 0))
+        self.date_from_entry = PlaceholderEntry(
+            f_date_row, placeholder="From",
+            width=12, font=("", 10))
+        self.date_from_entry.pack(side=tk.LEFT)
+        ttk.Label(f_date_row, text="〜", style="Panel.TLabel").pack(
+            side=tk.LEFT, padx=4)
+        self.date_to_entry = PlaceholderEntry(
+            f_date_row, placeholder="To",
+            width=12, font=("", 10))
+        self.date_to_entry.pack(side=tk.LEFT)
+        Tooltip(self.date_from_entry,
+                "コメント投稿日の下限 (この日以降)\n"
+                "形式: YYYY-MM-DD (例: 2024-01-01)\n"
+                "空欄で下限なし")
+        Tooltip(self.date_to_entry,
+                "コメント投稿日の上限 (この日まで)\n"
+                "形式: YYYY-MM-DD (例: 2024-12-31)\n"
+                "空欄で上限なし")
+
+        # チェックボックス群
+        f_opts = ttk.Frame(r3c, style="Panel.TFrame")
+        f_opts.pack(side=tk.LEFT, padx=(0, 24))
+        ttk.Label(f_opts, text="オプション",
+                  style="Panel.TLabel").pack(anchor="w")
+        f_opts_row = ttk.Frame(f_opts, style="Panel.TFrame")
+        f_opts_row.pack(anchor="w", pady=(2, 0))
+
+        self.include_replies_var = tk.BooleanVar(value=False)
+        cb_replies = ttk.Checkbutton(
+            f_opts_row, text="返信コメントも取得",
+            variable=self.include_replies_var,
+            style="Panel.TCheckbutton")
+        cb_replies.pack(side=tk.LEFT, padx=(0, 12))
+        Tooltip(cb_replies,
+                "トップレベルのコメントだけでなく、それに対する返信コメントも取得します。\n"
+                "※APIクォータの追加消費はありませんが、データ量は増えます。")
+
+        self.dedup_var = tk.BooleanVar(value=True)
+        cb_dedup = ttk.Checkbutton(
+            f_opts_row, text="重複コメントを除去",
+            variable=self.dedup_var,
+            style="Panel.TCheckbutton")
+        cb_dedup.pack(side=tk.LEFT)
+        Tooltip(cb_dedup,
+                "同じテキストのコメント (コピペ・スパム等) を除外します。\n"
+                "投稿者名+本文の組み合わせで重複判定します。")
 
         # === Row 4: Run / Stop buttons ===
         r4 = ttk.Frame(inner, style="Panel.TFrame")
@@ -741,6 +827,21 @@ class YouTubeCommentExtractorApp:
         lbl = ttk.Label(bar, text="④ 結果", style="Status.TLabel",
                         font=("Yu Gothic UI", 10, "bold") if sys.platform == "win32" else ("", 10, "bold"))
         lbl.pack(side=tk.LEFT)
+
+        # 結果内検索ボックス
+        ttk.Label(bar, text="  🔍 絞り込み:", style="Status.TLabel").pack(side=tk.LEFT)
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(bar, textvariable=self.search_var, width=24,
+                                      font=("", 10))
+        self.search_entry.pack(side=tk.LEFT, padx=(4, 0))
+        self.search_entry.bind("<KeyRelease>", self._on_search_changed)
+        Tooltip(self.search_entry,
+                "取得済みの結果から絞り込み検索します (インクリメンタル)。\n"
+                "コメント本文/タイトル/投稿者名のいずれかに含まれる文字列を入力。\n"
+                "大文字小文字は区別しません。\n"
+                "空欄で全件表示に戻ります。")
+        ttk.Button(bar, text="✕", width=3, style="Link.TButton",
+                   command=lambda: self.search_var.set("")).pack(side=tk.LEFT, padx=(2, 0))
 
         self.count_label = ttk.Label(bar, text="  件数: 0", style="Status.TLabel")
         self.count_label.pack(side=tk.LEFT)
@@ -792,8 +893,13 @@ class YouTubeCommentExtractorApp:
         x_sb.config(command=self.tree.xview)
 
         anchors = {"likes": "center", "date": "center", "comment_date": "center"}
+        # 列クリックでソート可能にする
+        self._sort_state = {}  # {col_id: reverse_bool}
         for cid, heading, width in zip(COL_IDS, HEADERS, COL_WIDTHS_GUI):
-            self.tree.heading(cid, text=heading)
+            self.tree.heading(
+                cid, text=heading,
+                command=lambda c=cid: self._sort_by_column(c),
+            )
             self.tree.column(cid, width=width, minwidth=50,
                              anchor=anchors.get(cid, "w"))
 
@@ -1241,6 +1347,65 @@ class YouTubeCommentExtractorApp:
                 if hasattr(self, "export_csv_btn"):
                     self.export_csv_btn.config(state=tk.NORMAL)
 
+    def _on_search_changed(self, _evt=None):
+        """結果テーブル内のインクリメンタル絞り込み検索。"""
+        query = self.search_var.get().strip().lower()
+        # 全件をいったん削除して再描画
+        self.tree.delete(*self.tree.get_children())
+        if not query:
+            # 全件表示
+            for row in self.results:
+                self._add_row_to_tree(row)
+            self.count_label.config(text=f"  件数: {len(self.results)}")
+            return
+
+        visible = 0
+        for row in self.results:
+            title = str(row[1]).lower()
+            author = str(row[3]).lower()
+            text = str(row[4]).lower()
+            if query in title or query in author or query in text:
+                self._add_row_to_tree(row)
+                visible += 1
+
+        self.count_label.config(
+            text=f"  件数: {visible} / {len(self.results)} (絞り込み中)"
+        )
+
+    def _sort_by_column(self, col_id: str):
+        """列ヘッダークリックで結果テーブルをソート (昇順⇔降順トグル)。"""
+        if not self.tree.get_children():
+            return
+        # 型別ソートキー
+        def sort_key(row_id):
+            val = self.tree.set(row_id, col_id)
+            if col_id == "likes":
+                try:
+                    return (0, int(val))
+                except ValueError:
+                    return (0, 0)
+            # 日付/日時は文字列比較で元のフォーマットなら正常動作
+            return (1, val.lower())
+
+        reverse = self._sort_state.get(col_id, False)
+        rows = [(sort_key(r), r) for r in self.tree.get_children()]
+        rows.sort(key=lambda x: x[0], reverse=reverse)
+        for i, (_, r) in enumerate(rows):
+            self.tree.move(r, "", i)
+            # ゼブラ再適用
+            self.tree.item(r, tags=("even" if i % 2 == 0 else "odd",))
+
+        # トグル
+        self._sort_state[col_id] = not reverse
+
+        # 見出しに矢印アイコン
+        for cid, heading in zip(COL_IDS, HEADERS):
+            if cid == col_id:
+                arrow = " ▼" if reverse else " ▲"
+                self.tree.heading(cid, text=heading + arrow)
+            else:
+                self.tree.heading(cid, text=heading)
+
     def _add_row_to_tree(self, row: tuple):
         """Treeviewへの行追加 (ゼブラストライプ付き、コメントは改行除去)。"""
         idx = len(self.tree.get_children())
@@ -1347,10 +1512,36 @@ class YouTubeCommentExtractorApp:
             return
 
         text_filter = self.text_filter_entry.get_value()
+        text_filter_mode = self.text_filter_mode_var.get()
+        author_filter = self.author_filter_entry.get_value().strip()
+        include_replies = self.include_replies_var.get()
+        dedup = self.dedup_var.get()
+
+        # 日付範囲: YYYY-MM-DD 形式を ISO 8601 に変換
+        date_from_str = self.date_from_entry.get_value().strip()
+        date_to_str = self.date_to_entry.get_value().strip()
+        date_from = None
+        date_to = None
+        try:
+            if date_from_str:
+                # From はその日の0時として扱う
+                datetime.strptime(date_from_str, "%Y-%m-%d")
+                date_from = f"{date_from_str}T00:00:00Z"
+            if date_to_str:
+                datetime.strptime(date_to_str, "%Y-%m-%d")
+                # To はその日の23:59:59として扱う
+                date_to = f"{date_to_str}T23:59:59Z"
+        except ValueError:
+            messagebox.showwarning(
+                "入力エラー",
+                "日付は YYYY-MM-DD 形式で入力してください (例: 2024-01-15)"
+            )
+            return
 
         # 結果をクリア
         self.tree.delete(*self.tree.get_children())
         self.results.clear()
+        self._seen_comment_keys = set()  # 重複除去用
         self.count_label.config(text="  件数: 0")
         self._update_progress(0)
         self.elapsed_var.set("")
@@ -1362,7 +1553,21 @@ class YouTubeCommentExtractorApp:
 
         self.worker_thread = threading.Thread(
             target=self._worker,
-            args=(api_key, urls, max_videos, min_likes, text_filter, mode, order),
+            kwargs={
+                "api_key": api_key,
+                "urls": urls,
+                "max_videos": max_videos,
+                "min_likes": min_likes,
+                "text_filter": text_filter,
+                "text_filter_mode": text_filter_mode,
+                "author_filter": author_filter,
+                "include_replies": include_replies,
+                "dedup": dedup,
+                "date_from": date_from,
+                "date_to": date_to,
+                "mode": mode,
+                "order": order,
+            },
             daemon=True,
         )
         self.worker_thread.start()
@@ -1378,6 +1583,9 @@ class YouTubeCommentExtractorApp:
     # ------------------------------------------------------------------
 
     def _worker(self, api_key, urls, max_videos, min_likes, text_filter,
+                text_filter_mode="AND", author_filter="",
+                include_replies=False, dedup=True,
+                date_from=None, date_to=None,
                 mode="video", order="date"):
         put = self.msg_queue.put
         try:
@@ -1476,6 +1684,11 @@ class YouTubeCommentExtractorApp:
                         video["video_id"],
                         min_likes=min_likes,
                         text_filter=text_filter,
+                        text_filter_mode=text_filter_mode,
+                        author_filter=author_filter,
+                        include_replies=include_replies,
+                        date_from=date_from,
+                        date_to=date_to,
                         cancel_check=lambda: self.cancelled,
                     )
                 except Exception as exc:
@@ -1491,9 +1704,22 @@ class YouTubeCommentExtractorApp:
 
                 vid_date = format_date(video["published_at"])
 
+                # 重複除去用: (author, text) で判定
+                seen_keys = getattr(self, "_seen_comment_keys", None)
+                if seen_keys is None:
+                    self._seen_comment_keys = seen_keys = set()
+
                 for c in comments:
                     if self.cancelled:
                         break
+
+                    # 重複除去 (author + text)
+                    if dedup:
+                        key = (c["author"], c["text"])
+                        if key in seen_keys:
+                            continue
+                        seen_keys.add(key)
+
                     put({
                         "type": "row",
                         "data": (
