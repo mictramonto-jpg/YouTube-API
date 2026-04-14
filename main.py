@@ -57,26 +57,36 @@ COL_WIDTHS_GUI = [220, 260, 100, 130, 340, 110, 140]
 COL_WIDTHS_EXCEL = [45, 50, 14, 22, 70, 14, 20]
 
 # --------------------------------------------------------------------
-# Windows 11 Fluent インスパイアのカラーパレット
+# Apple / Notion インスパイアのミニマルパレット
 # --------------------------------------------------------------------
-C_BG        = "#f3f3f3"   # Mica風の背景
-C_PANEL     = "#ffffff"   # カード/サーフェス
-C_PANEL_ALT = "#fafafa"   # セカンダリサーフェス
-C_ACCENT    = "#0067c0"   # Windows 11 デフォルトアクセント (Blue)
-C_ACCENT_DK = "#005a9e"   # ホバー時
-C_ACCENT_LT = "#deecf9"   # 淡いアクセント (選択背景)
-C_DANGER    = "#c42b1c"   # 警告/削除 (赤)
-C_DANGER_DK = "#8b1f14"
-C_TEXT      = "#1b1b1b"   # 主文字色
-C_TEXT_SEC  = "#424242"   # 副文字色
-C_MUTED     = "#757575"   # 淡い文字色
-C_BORDER    = "#e5e5e5"   # 境界線
-C_BORDER_DK = "#d1d1d1"   # 濃い境界線
-C_OK        = "#107c10"   # 成功
-C_WARN      = "#ca5010"   # 警告
+C_BG            = "#ffffff"   # メイン背景 (pure white)
+C_BG_SUBTLE     = "#fafafa"   # ごく薄いグレー (セクション背景)
+C_PANEL         = "#ffffff"   # カード表面
+C_PANEL_SUBTLE  = "#f7f7f8"   # Notion風の淡いパネル
+C_HOVER         = "#f1f1f2"   # ホバー状態
+C_ACCENT        = "#0a0a0a"   # プライマリ (Apple "Continue" 風の黒)
+C_ACCENT_HOVER  = "#2a2a2a"
+C_ACCENT_SOFT   = "#e8edf3"   # 選択行など
+C_LINK          = "#2e6fdb"   # リンク青 (Notion風)
+C_LINK_HOVER    = "#1e5bc6"
+C_DANGER        = "#d93025"   # エラー/削除
+C_DANGER_SOFT   = "#fef3f2"
+C_TEXT          = "#1d1d1f"   # 主文字色 (Apple ダークグレー)
+C_TEXT_SEC      = "#515154"   # 副文字色
+C_MUTED         = "#86868b"   # 補足文字色 (Apple muted)
+C_PLACEHOLDER   = "#b0b0b3"
+C_BORDER        = "#e5e5e7"   # 境界線 (Apple seperator)
+C_BORDER_SOFT   = "#f0f0f1"   # ほぼ見えない境界
+C_OK            = "#1d7e40"
+C_WARN          = "#c76a00"
 
-# 互換のため旧名も残す
-C_ACCENT_RED = "#d32f2f"
+# 旧名称の互換エイリアス
+C_ACCENT_DK     = C_ACCENT_HOVER
+C_PANEL_ALT     = C_BG_SUBTLE
+C_BORDER_DK     = C_BORDER
+C_ACCENT_LT     = C_ACCENT_SOFT
+C_TEXT_SEC      = C_TEXT_SEC  # noqa
+C_ACCENT_RED    = C_DANGER
 
 API_KEY_GUIDE_URL = "https://console.cloud.google.com/apis/credentials"
 API_LIBRARY_URL = "https://console.cloud.google.com/apis/library/youtube.googleapis.com"
@@ -285,155 +295,207 @@ class YouTubeCommentExtractorApp:
         self.root.minsize(960, 620)
 
     def _setup_styles(self):
+        """Apple / Notion インスパイアのミニマル tkinter スタイル。"""
         style = ttk.Style()
         try:
             style.theme_use("clam")
         except tk.TclError:
             pass
 
-        # Windows 11 標準フォント: "Segoe UI Variable" (9.75/11.25/13pt)
-        # 日本語環境では "Yu Gothic UI" を使用
-        if sys.platform == "win32":
-            base_font    = ("Yu Gothic UI", 10)
-            body_font    = ("Yu Gothic UI", 10)
-            heading_font = ("Yu Gothic UI", 10, "bold")
-            title_font   = ("Yu Gothic UI Semibold", 18)
-            subtitle_font = ("Yu Gothic UI", 10)
-            label_font   = ("Yu Gothic UI", 10)
-            section_font = ("Yu Gothic UI Semibold", 11)
+        # Font stack: SF Pro → Inter → Segoe UI Variable → Yu Gothic UI
+        if sys.platform == "darwin":
+            _family = "SF Pro Text"
+            _family_semi = "SF Pro Display"
+        elif sys.platform == "win32":
+            _family = "Yu Gothic UI"
+            _family_semi = "Yu Gothic UI Semibold"
         else:
-            base_font = body_font = ("", 10)
-            heading_font = ("", 10, "bold")
-            title_font = ("", 18, "bold")
-            subtitle_font = ("", 10)
-            label_font = ("", 10)
-            section_font = ("", 11, "bold")
+            _family = ""
+            _family_semi = ""
 
-        # ---- 基本 ----
+        def F(size, weight="normal"):
+            if weight == "semi":
+                return (_family_semi or _family, size) if _family_semi else (_family, size, "bold")
+            if weight == "bold":
+                return (_family, size, "bold")
+            return (_family, size)
+
+        body      = F(10)
+        body_sm   = F(9)
+        body_xs   = F(8)
+        label     = F(10)
+        section   = F(11, "semi")
+        h1        = F(22, "semi")
+        h2        = F(16, "semi")
+        h_card    = F(20, "semi")
+        button    = F(10)
+        button_b  = F(10, "semi")
+
+        # ---------------- フレーム ----------------
         style.configure("TFrame", background=C_BG)
         style.configure("Panel.TFrame", background=C_PANEL)
-        style.configure("PanelAlt.TFrame", background=C_PANEL_ALT)
-        style.configure("Card.TFrame", background=C_PANEL, relief="flat", borderwidth=0)
+        style.configure("Subtle.TFrame", background=C_PANEL_SUBTLE)
+        style.configure("PanelAlt.TFrame", background=C_BG_SUBTLE)
+        style.configure("Card.TFrame", background=C_PANEL)
+        style.configure("Divider.TFrame", background=C_BORDER)
 
-        style.configure("TLabel", background=C_BG, foreground=C_TEXT, font=body_font)
-        style.configure("Panel.TLabel", background=C_PANEL, foreground=C_TEXT, font=body_font)
-        style.configure("PanelAlt.TLabel", background=C_PANEL_ALT, foreground=C_TEXT, font=body_font)
-        style.configure("Header.TLabel", background=C_PANEL, foreground=C_TEXT,
-                        font=title_font)
-        style.configure("Sub.TLabel", background=C_PANEL, foreground=C_MUTED,
-                        font=subtitle_font)
-        style.configure("FieldLabel.TLabel", background=C_PANEL, foreground=C_TEXT,
-                        font=section_font)
-        style.configure("SectionNum.TLabel", background=C_PANEL, foreground=C_ACCENT,
-                        font=section_font)
-        style.configure("Status.TLabel", background=C_BG, foreground=C_TEXT_SEC,
-                        font=body_font)
-        style.configure("StatusOK.TLabel", background=C_BG, foreground=C_OK, font=body_font)
-        style.configure("StatusWarn.TLabel", background=C_BG, foreground=C_WARN, font=body_font)
-        style.configure("Danger.TLabel", background=C_PANEL, foreground=C_DANGER,
-                        font=body_font)
+        # ---------------- テキスト ----------------
+        style.configure("TLabel", background=C_BG, foreground=C_TEXT, font=body)
+        style.configure("Panel.TLabel", background=C_PANEL, foreground=C_TEXT, font=body)
+        style.configure("Subtle.TLabel", background=C_PANEL_SUBTLE, foreground=C_TEXT, font=body)
+        style.configure("PanelAlt.TLabel", background=C_BG_SUBTLE, foreground=C_TEXT, font=body)
 
-        # ---- フレーム/ラベルフレーム ----
-        style.configure("TLabelframe", background=C_BG, borderwidth=1, relief="solid",
-                        bordercolor=C_BORDER)
-        style.configure("TLabelframe.Label", background=C_BG, foreground=C_TEXT,
-                        font=section_font)
+        # タイトル系
+        style.configure("Header.TLabel", background=C_BG, foreground=C_TEXT, font=h1)
+        style.configure("Sub.TLabel", background=C_BG, foreground=C_MUTED, font=body_sm)
+        style.configure("HeaderSub.TLabel", background=C_BG, foreground=C_MUTED, font=body)
+        style.configure("PanelSub.TLabel", background=C_PANEL, foreground=C_MUTED, font=body_sm)
 
-        # ---- 入力 ----
-        style.configure("TEntry", fieldbackground="white", padding=6,
-                        bordercolor=C_BORDER_DK, lightcolor=C_BORDER_DK,
-                        darkcolor=C_BORDER_DK)
+        # セクション見出し (Notion風 小見出し)
+        style.configure("FieldLabel.TLabel", background=C_PANEL, foreground=C_TEXT_SEC,
+                        font=F(10, "semi"))
+        # プライマリセクションラベル
+        style.configure("SectionNum.TLabel", background=C_PANEL, foreground=C_ACCENT, font=section)
+
+        # 状態
+        style.configure("Status.TLabel", background=C_BG, foreground=C_TEXT_SEC, font=body_sm)
+        style.configure("StatusOK.TLabel", background=C_BG, foreground=C_OK, font=body_sm)
+        style.configure("StatusWarn.TLabel", background=C_BG, foreground=C_WARN, font=body_sm)
+        style.configure("Danger.TLabel", background=C_PANEL, foreground=C_DANGER, font=body_sm)
+
+        # ---------------- ラベルフレーム ----------------
+        style.configure("TLabelframe", background=C_BG, borderwidth=0, relief="flat")
+        style.configure("TLabelframe.Label", background=C_BG,
+                        foreground=C_TEXT, font=section)
+
+        # ---------------- 入力 (Apple/Notion風の薄い境界) ----------------
+        style.configure("TEntry",
+                        fieldbackground="white", padding=(10, 8),
+                        bordercolor=C_BORDER, lightcolor=C_BORDER,
+                        darkcolor=C_BORDER, borderwidth=1, relief="solid")
         style.map("TEntry",
                   bordercolor=[("focus", C_ACCENT)],
                   lightcolor=[("focus", C_ACCENT)],
                   darkcolor=[("focus", C_ACCENT)])
-        # エラー状態 (検証失敗時)
-        style.configure("Error.TEntry", fieldbackground="#fff4f4",
+        style.configure("Error.TEntry",
+                        fieldbackground=C_DANGER_SOFT,
                         bordercolor=C_DANGER, lightcolor=C_DANGER,
-                        darkcolor=C_DANGER, padding=6)
+                        darkcolor=C_DANGER, padding=(10, 8))
 
-        # ---- ボタン階層 ----
-        # TButton = 通常 (二次)
-        style.configure("TButton", font=base_font, padding=(12, 6),
-                        background=C_PANEL_ALT, foreground=C_TEXT,
-                        bordercolor=C_BORDER_DK, borderwidth=1, relief="flat")
-        style.map("TButton",
-                  background=[("active", C_BORDER), ("disabled", C_PANEL_ALT)],
-                  foreground=[("disabled", C_MUTED)])
-
-        # Primary (最重要アクション = 稼働)
-        style.configure("Primary.TButton", font=("Yu Gothic UI Semibold", 11) if sys.platform == "win32" else ("", 11, "bold"),
-                        padding=(18, 8), foreground="white",
-                        background=C_ACCENT, borderwidth=0, relief="flat")
-        style.map("Primary.TButton",
-                  background=[("active", C_ACCENT_DK), ("disabled", "#bfd7ea")],
-                  foreground=[("disabled", "white")])
-        # 互換用
-        style.configure("Run.TButton",
-                        font=("Yu Gothic UI Semibold", 11) if sys.platform == "win32" else ("", 11, "bold"),
-                        padding=(18, 8), foreground="white",
-                        background=C_ACCENT, borderwidth=0, relief="flat")
-        style.map("Run.TButton",
-                  background=[("active", C_ACCENT_DK), ("!disabled", C_ACCENT)],
-                  foreground=[("!disabled", "white"), ("disabled", "white")])
-
-        # Secondary (副次的)
-        style.configure("Secondary.TButton", font=base_font, padding=(12, 6),
+        # ---------------- ボタン階層 ----------------
+        # Secondary (既定)
+        style.configure("TButton", font=button, padding=(14, 8),
                         background=C_PANEL, foreground=C_TEXT,
-                        bordercolor=C_BORDER_DK, borderwidth=1)
+                        bordercolor=C_BORDER, borderwidth=1, relief="flat",
+                        focusthickness=0)
+        style.map("TButton",
+                  background=[("active", C_HOVER), ("disabled", C_PANEL)],
+                  foreground=[("disabled", C_MUTED)],
+                  bordercolor=[("active", C_BORDER)])
 
-        # Danger (停止/削除)
-        style.configure("Stop.TButton", font=base_font, padding=(12, 6),
-                        background=C_PANEL_ALT, foreground=C_DANGER,
-                        bordercolor=C_BORDER_DK, borderwidth=1)
-        style.map("Stop.TButton",
-                  background=[("active", "#fce9e9"), ("disabled", C_PANEL_ALT)],
+        # Primary (Apple "Continue" 風 - 黒基調)
+        style.configure("Primary.TButton",
+                        font=button_b, padding=(22, 10),
+                        background=C_ACCENT, foreground="white",
+                        bordercolor=C_ACCENT, borderwidth=0,
+                        relief="flat", focusthickness=0)
+        style.map("Primary.TButton",
+                  background=[("active", C_ACCENT_HOVER), ("disabled", "#e5e5e7")],
                   foreground=[("disabled", C_MUTED)])
 
-        # Link (テキストリンク風)
-        style.configure("Link.TButton", font=base_font, padding=(6, 4),
-                        foreground=C_ACCENT, background=C_PANEL,
-                        borderwidth=0, relief="flat")
+        # 互換: Run = Primary
+        style.configure("Run.TButton",
+                        font=button_b, padding=(22, 10),
+                        background=C_ACCENT, foreground="white",
+                        bordercolor=C_ACCENT, borderwidth=0, relief="flat",
+                        focusthickness=0)
+        style.map("Run.TButton",
+                  background=[("active", C_ACCENT_HOVER), ("disabled", "#e5e5e7")],
+                  foreground=[("!disabled", "white"), ("disabled", C_MUTED)])
+
+        # Secondary (明示)
+        style.configure("Secondary.TButton", font=button, padding=(14, 8),
+                        background=C_PANEL, foreground=C_TEXT,
+                        bordercolor=C_BORDER, borderwidth=1, relief="flat")
+        style.map("Secondary.TButton",
+                  background=[("active", C_HOVER)])
+
+        # Danger / Stop
+        style.configure("Stop.TButton", font=button, padding=(14, 8),
+                        background=C_PANEL, foreground=C_DANGER,
+                        bordercolor=C_BORDER, borderwidth=1, relief="flat")
+        style.map("Stop.TButton",
+                  background=[("active", C_DANGER_SOFT), ("disabled", C_PANEL)],
+                  foreground=[("disabled", C_MUTED)])
+
+        # Link (テキストボタン = Notion風)
+        style.configure("Link.TButton", font=button, padding=(8, 4),
+                        foreground=C_LINK, background=C_PANEL,
+                        borderwidth=0, relief="flat", focusthickness=0)
         style.map("Link.TButton",
-                  foreground=[("active", C_ACCENT_DK)],
-                  background=[("active", C_ACCENT_LT)])
+                  foreground=[("active", C_LINK_HOVER)],
+                  background=[("active", C_HOVER)])
 
-        # ---- ラジオ/チェック ----
-        style.configure("Panel.TRadiobutton", background=C_PANEL,
-                        foreground=C_TEXT, font=body_font)
-        style.map("Panel.TRadiobutton",
-                  background=[("active", C_PANEL)])
-        style.configure("Panel.TCheckbutton", background=C_PANEL,
-                        foreground=C_TEXT, font=body_font)
-        style.map("Panel.TCheckbutton",
-                  background=[("active", C_PANEL)])
+        # Toolbar (目立たない操作ボタン)
+        style.configure("Toolbar.TButton", font=button_b, padding=(10, 6),
+                        foreground=C_TEXT_SEC, background=C_PANEL,
+                        borderwidth=0, relief="flat", focusthickness=0)
+        style.map("Toolbar.TButton",
+                  foreground=[("active", C_TEXT)],
+                  background=[("active", C_HOVER)])
 
-        # ---- Treeview (結果テーブル) ----
+        # ---------------- ラジオ / チェック ----------------
+        for base_bg, sfx in [(C_PANEL, "Panel"), (C_PANEL_SUBTLE, "Subtle")]:
+            style.configure(f"{sfx}.TRadiobutton",
+                            background=base_bg, foreground=C_TEXT, font=body,
+                            focusthickness=0, indicatorcolor="white",
+                            indicatormargin=2)
+            style.map(f"{sfx}.TRadiobutton", background=[("active", base_bg)])
+            style.configure(f"{sfx}.TCheckbutton",
+                            background=base_bg, foreground=C_TEXT, font=body,
+                            focusthickness=0)
+            style.map(f"{sfx}.TCheckbutton", background=[("active", base_bg)])
+
+        # ---------------- Treeview ----------------
         style.configure("Results.Treeview",
-                        rowheight=30, font=body_font, fieldbackground="white",
+                        rowheight=36, font=body, fieldbackground="white",
                         background="white", foreground=C_TEXT,
                         borderwidth=0, relief="flat")
         style.configure("Results.Treeview.Heading",
-                        font=heading_font, background="#f5f5f5",
-                        foreground=C_TEXT_SEC, padding=(6, 8),
+                        font=F(9, "semi"), background=C_BG_SUBTLE,
+                        foreground=C_MUTED, padding=(10, 10),
                         borderwidth=0, relief="flat")
         style.map("Results.Treeview",
-                  background=[("selected", C_ACCENT_LT)],
+                  background=[("selected", C_ACCENT_SOFT)],
                   foreground=[("selected", C_TEXT)])
         style.map("Results.Treeview.Heading",
-                  background=[("active", "#eeeeee")])
+                  background=[("active", C_HOVER)])
 
-        # ---- プログレスバー ----
+        # ---------------- プログレスバー (細くミニマル) ----------------
         style.configure("Horizontal.TProgressbar",
-                        troughcolor="#e8e8e8", background=C_ACCENT,
-                        thickness=6, borderwidth=0)
+                        troughcolor=C_BORDER_SOFT, background=C_ACCENT,
+                        thickness=4, borderwidth=0,
+                        lightcolor=C_ACCENT, darkcolor=C_ACCENT)
 
-        # ---- コンボボックス ----
-        style.configure("TCombobox", padding=5, fieldbackground="white")
+        # ---------------- コンボボックス ----------------
+        style.configure("TCombobox", padding=(10, 7), fieldbackground="white",
+                        bordercolor=C_BORDER, arrowcolor=C_TEXT_SEC,
+                        borderwidth=1, relief="flat")
         style.map("TCombobox",
                   fieldbackground=[("readonly", "white")],
-                  selectbackground=[("readonly", C_ACCENT_LT)],
-                  selectforeground=[("readonly", C_TEXT)])
+                  selectbackground=[("readonly", "white")],
+                  selectforeground=[("readonly", C_TEXT)],
+                  bordercolor=[("focus", C_ACCENT)])
+
+        # ---------------- Scrollbar ----------------
+        style.configure("Vertical.TScrollbar",
+                        background=C_BG_SUBTLE, troughcolor=C_BG,
+                        bordercolor=C_BG, arrowcolor=C_MUTED,
+                        gripcount=0, relief="flat", borderwidth=0)
+        style.configure("Horizontal.TScrollbar",
+                        background=C_BG_SUBTLE, troughcolor=C_BG,
+                        bordercolor=C_BG, arrowcolor=C_MUTED,
+                        gripcount=0, relief="flat", borderwidth=0)
 
     # ------------------------------------------------------------------
     # Menu bar
@@ -478,58 +540,57 @@ class YouTubeCommentExtractorApp:
     # ------------------------------------------------------------------
 
     def _build_header(self):
-        hdr = ttk.Frame(self.root, style="Panel.TFrame")
+        """Notion / Apple インスパイアのミニマルヘッダー。"""
+        hdr = ttk.Frame(self.root, style="TFrame")
         hdr.pack(fill=tk.X, padx=0, pady=0)
 
-        inner = ttk.Frame(hdr, style="Panel.TFrame", padding=(16, 10))
+        inner = ttk.Frame(hdr, style="TFrame", padding=(28, 22, 28, 16))
         inner.pack(fill=tk.X)
 
-        title = ttk.Label(inner, text="▶ " + APP_TITLE, style="Header.TLabel")
+        # タイトル (大きなセンス系のタイポグラフィ、アイコン控えめ)
+        title = ttk.Label(inner, text=APP_TITLE, style="Header.TLabel")
         title.pack(side=tk.LEFT)
 
-        sub = ttk.Label(inner, text="YouTube Data API v3 を利用してコメントを抽出 → Excel 出力",
-                        style="Sub.TLabel")
-        sub.pack(side=tk.LEFT, padx=(14, 0), pady=(6, 0))
+        # サブタイトル (補足説明は薄いグレーで控えめに)
+        sub = ttk.Label(inner,
+                        text="YouTubeコメントをシンプルに、美しく抽出。",
+                        style="HeaderSub.TLabel")
+        sub.pack(side=tk.LEFT, padx=(16, 0), pady=(10, 0))
 
-        sep = ttk.Separator(self.root, orient="horizontal")
-        sep.pack(fill=tk.X)
+        # 右上に小さなバージョン/ヒント表示
+        hint = ttk.Label(inner, text="⌘F5  /  F5",
+                         style="Sub.TLabel")
+        hint.pack(side=tk.RIGHT, pady=(12, 0))
+
+        # 薄い区切り線 (Apple風 1px)
+        div = tk.Frame(self.root, bg=C_BORDER, height=1)
+        div.pack(fill=tk.X)
 
     # ------------------------------------------------------------------
     # Input section
     # ------------------------------------------------------------------
 
     def _build_input_section(self):
-        outer = ttk.Frame(self.root, padding=(12, 10, 12, 4))
+        """Apple/Notion風: 大きな余白、薄い境界、セクション分離。"""
+        outer = ttk.Frame(self.root, padding=(28, 18, 28, 8))
         outer.pack(fill=tk.X)
 
-        # 入力パネル (白背景)
-        panel = tk.Frame(outer, bg=C_PANEL, highlightbackground=C_BORDER,
-                         highlightthickness=1)
+        # Notion風カード (白背景 + 極薄の境界線)
+        panel = tk.Frame(outer, bg=C_PANEL,
+                         highlightbackground=C_BORDER,
+                         highlightthickness=1, bd=0)
         panel.pack(fill=tk.X)
 
-        inner = ttk.Frame(panel, style="Panel.TFrame", padding=14)
+        inner = ttk.Frame(panel, style="Panel.TFrame", padding=(24, 22))
         inner.pack(fill=tk.X)
 
-        # === Row 1: API Key ===
-        r1 = ttk.Frame(inner, style="Panel.TFrame")
-        r1.pack(fill=tk.X, pady=(0, 10))
-
-        lbl1 = ttk.Label(r1, text="① YouTube Data API Key", style="FieldLabel.TLabel")
-        lbl1.pack(side=tk.LEFT)
-
-        guide_btn = ttk.Button(r1, text="❓ 取得方法", style="Link.TButton",
-                               command=self.show_api_guide)
-        guide_btn.pack(side=tk.LEFT, padx=(10, 0))
-        Tooltip(guide_btn, "APIキーの取得手順を表示します (F1)")
-
-        open_console_btn = ttk.Button(r1, text="🌐 Google Cloud Console を開く",
-                                       style="Link.TButton",
-                                       command=lambda: webbrowser.open(API_KEY_GUIDE_URL))
-        open_console_btn.pack(side=tk.LEFT, padx=(6, 0))
-        Tooltip(open_console_btn, "ブラウザで Google Cloud Console の認証情報ページを開きます")
+        # === Section 1: API Key ===
+        lbl1 = ttk.Label(inner, text="API Key",
+                        style="FieldLabel.TLabel")
+        lbl1.pack(anchor="w", pady=(0, 8))
 
         r1b = ttk.Frame(inner, style="Panel.TFrame")
-        r1b.pack(fill=tk.X, pady=(0, 12))
+        r1b.pack(fill=tk.X, pady=(0, 6))
 
         self.api_key_var = tk.StringVar()
         self.api_key_entry = ttk.Entry(r1b, textvariable=self.api_key_var,
@@ -539,30 +600,44 @@ class YouTubeCommentExtractorApp:
                 "Google Cloud Console で発行したYouTube Data API v3のキーをペースト")
 
         self._key_visible = False
-        self.toggle_key_btn = ttk.Button(r1b, text="👁 表示", width=7,
+        self.toggle_key_btn = ttk.Button(r1b, text="表示", width=6,
+                                          style="Toolbar.TButton",
                                           command=self._toggle_api_key)
-        self.toggle_key_btn.pack(side=tk.LEFT, padx=(6, 0))
+        self.toggle_key_btn.pack(side=tk.LEFT, padx=(8, 0))
         Tooltip(self.toggle_key_btn, "APIキーの表示/非表示を切り替えます")
 
         clear_key_btn = ttk.Button(r1b, text="✕", width=3,
+                                    style="Toolbar.TButton",
                                     command=lambda: self.api_key_var.set(""))
         clear_key_btn.pack(side=tk.LEFT, padx=(4, 0))
         Tooltip(clear_key_btn, "APIキー欄をクリアします")
 
-        # === Row 2: URL(s) ===
-        r2 = ttk.Frame(inner, style="Panel.TFrame")
-        r2.pack(fill=tk.X, pady=(0, 4))
+        # ヘルプリンク群 (Notion風に小さく目立たず)
+        help_row = ttk.Frame(inner, style="Panel.TFrame")
+        help_row.pack(fill=tk.X, pady=(6, 0))
+        ttk.Button(help_row, text="取得方法",
+                   style="Link.TButton",
+                   command=self.show_api_guide).pack(side=tk.LEFT)
+        ttk.Label(help_row, text="·", style="PanelSub.TLabel").pack(
+            side=tk.LEFT, padx=4)
+        ttk.Button(help_row, text="Google Cloud Console",
+                   style="Link.TButton",
+                   command=lambda: webbrowser.open(API_KEY_GUIDE_URL)).pack(side=tk.LEFT)
 
-        ttk.Label(r2, text="② YouTube URL (チャンネルURL または 動画URL)",
-                  style="FieldLabel.TLabel").pack(side=tk.LEFT)
+        # 区切り (極薄)
+        tk.Frame(inner, bg=C_BORDER_SOFT, height=1).pack(
+            fill=tk.X, pady=(22, 0))
 
-        # ヘルプ (複数URL対応の説明)
-        ttk.Label(r2, text="  複数URL対応:「+ URL追加」で枠を追加／CSVで一括読込可",
-                  style="Sub.TLabel").pack(side=tk.LEFT, padx=(8, 0))
+        # === Section 2: URL ===
+        ttk.Label(inner, text="URL",
+                  style="FieldLabel.TLabel").pack(anchor="w", pady=(18, 4))
+        ttk.Label(inner,
+                  text="チャンネルURL または 動画URL。複数入力・CSV一括読込可。",
+                  style="PanelSub.TLabel").pack(anchor="w", pady=(0, 8))
 
         # URL 入力行を管理するコンテナ
         self.url_list_frame = ttk.Frame(inner, style="Panel.TFrame")
-        self.url_list_frame.pack(fill=tk.X, pady=(2, 4))
+        self.url_list_frame.pack(fill=tk.X, pady=(0, 4))
 
         # 複数URLを保持するリスト (各要素は PlaceholderEntry ウィジェット)
         self.url_entries = []
@@ -572,75 +647,86 @@ class YouTubeCommentExtractorApp:
         # 最初のURL入力行を追加
         self._add_url_row()
 
-        # URL 操作ボタン列 (+ URL追加 / CSVから読込 / 全クリア)
+        # URL 操作ボタン列
         r2btn = ttk.Frame(inner, style="Panel.TFrame")
-        r2btn.pack(fill=tk.X, pady=(0, 12))
+        r2btn.pack(fill=tk.X, pady=(4, 0))
 
-        add_url_btn = ttk.Button(r2btn, text="＋ URL追加",
+        add_url_btn = ttk.Button(r2btn, text="＋ URLを追加",
                                  style="Link.TButton",
                                  command=self._add_url_row)
         add_url_btn.pack(side=tk.LEFT)
-        Tooltip(add_url_btn,
-                "新しいURL入力欄を下に追加します。\n"
-                "複数の動画/チャンネルを一括処理できます。")
+        Tooltip(add_url_btn, "新しいURL入力欄を追加します。")
 
-        csv_btn = ttk.Button(r2btn, text="📁 CSVから一括読込",
+        ttk.Label(r2btn, text="·", style="PanelSub.TLabel").pack(side=tk.LEFT, padx=4)
+
+        csv_btn = ttk.Button(r2btn, text="CSVから一括読込",
                              style="Link.TButton",
                              command=self._load_urls_from_csv)
-        csv_btn.pack(side=tk.LEFT, padx=(8, 0))
+        csv_btn.pack(side=tk.LEFT)
         Tooltip(csv_btn,
                 "CSV/TXTファイルからURLを一括で読み込みます。\n"
-                "・1行に1つのURLを記載した形式\n"
-                "・CSV形式 (URLを任意の列に記載) も対応\n"
-                "・ヘッダ行は自動でスキップ")
+                "1行に1つのURL、またはCSVの任意列に記載。")
 
-        clear_all_btn = ttk.Button(r2btn, text="全クリア",
+        ttk.Label(r2btn, text="·", style="PanelSub.TLabel").pack(side=tk.LEFT, padx=4)
+
+        clear_all_btn = ttk.Button(r2btn, text="すべてクリア",
                                    style="Link.TButton",
                                    command=self._clear_all_urls)
-        clear_all_btn.pack(side=tk.LEFT, padx=(8, 0))
-        Tooltip(clear_all_btn, "全てのURL入力欄をクリアします (1行は残します)。")
+        clear_all_btn.pack(side=tk.LEFT)
+        Tooltip(clear_all_btn, "全てのURL入力欄をクリアします。")
 
         # 後方互換: 旧コードの self.url_entry 参照を先頭のエントリに紐付け
         self.url_entry = self.url_entries[0]
 
-        # === Row 2c: Extraction Mode (channel-wide vs single-video) ===
+        # 区切り
+        tk.Frame(inner, bg=C_BORDER_SOFT, height=1).pack(
+            fill=tk.X, pady=(22, 0))
+
+        # === Section 3: 取得範囲 ===
+        ttk.Label(inner, text="取得範囲",
+                  style="FieldLabel.TLabel").pack(anchor="w", pady=(18, 8))
+
         r2c = ttk.Frame(inner, style="Panel.TFrame")
         r2c.pack(fill=tk.X, pady=(0, 12))
-        ttk.Label(r2c, text="取得範囲:", style="Panel.TLabel").pack(side=tk.LEFT,
-                                                                    padx=(0, 10))
 
         # "channel" = URL のチャンネル内の複数動画から取得
         # "video"   = URL で指定した動画のみから取得 (デフォルト)
         self.extract_mode_var = tk.StringVar(value="video")
 
         rb_video = ttk.Radiobutton(
-            r2c, text="指定した動画のみ (動画URL) ※複数URL対応",
+            r2c, text="指定した動画のみ",
             variable=self.extract_mode_var, value="video",
             style="Panel.TRadiobutton",
             command=self._on_mode_changed,
         )
-        rb_video.pack(side=tk.LEFT, padx=(0, 20))
+        rb_video.pack(side=tk.LEFT, padx=(0, 28))
         Tooltip(rb_video,
                 "URLで指定した動画のコメントだけを取得します。\n"
-                "動画URL (/watch?v=...、/shorts/...、/live/...) を入力してください。\n"
-                "複数のURLを入力すると、それぞれの動画を順番に処理します。")
+                "動画URL (/watch?v=...、/shorts/...、/live/...) を入力してください。")
 
         rb_channel = ttk.Radiobutton(
-            r2c, text="チャンネル全体 (URLからチャンネル特定→複数動画)",
+            r2c, text="チャンネル全体",
             variable=self.extract_mode_var, value="channel",
             style="Panel.TRadiobutton",
             command=self._on_mode_changed,
         )
         rb_channel.pack(side=tk.LEFT)
         Tooltip(rb_channel,
-                "入力URLのチャンネルから「リサーチする動画数」に指定した件数の動画を取得。\n"
-                "チャンネルタブURL/動画URLのどちらでもOK (動画URLの場合はそのチャンネル)。\n"
-                "複数URLを入力した場合、各チャンネルについて処理します。")
+                "URLのチャンネルから複数動画のコメントを取得。\n"
+                "「リサーチする動画数」で件数を指定できます。")
 
-        # === Row 3: Filters (3 inputs) ===
+        # 区切り
+        tk.Frame(inner, bg=C_BORDER_SOFT, height=1).pack(
+            fill=tk.X, pady=(22, 0))
+
+        # === Section 4: 抽出条件 ===
+        ttk.Label(inner, text="抽出条件",
+                  style="FieldLabel.TLabel").pack(anchor="w", pady=(18, 12))
+
         r3 = ttk.Frame(inner, style="Panel.TFrame")
-        r3.pack(fill=tk.X, pady=(0, 4))
-        ttk.Label(r3, text="③ 抽出条件", style="FieldLabel.TLabel").pack(side=tk.LEFT)
+        r3.pack(fill=tk.X, pady=(0, 0))
+        # ヘッダー行は上のセクションラベルで代替するため空
+        _dummy = r3
 
         r3b = ttk.Frame(inner, style="Panel.TFrame")
         r3b.pack(fill=tk.X)
@@ -809,112 +895,126 @@ class YouTubeCommentExtractorApp:
                 "同じテキストのコメント (コピペ・スパム等) を除外します。\n"
                 "投稿者名+本文の組み合わせで重複判定します。")
 
-        # === Row 4: Run / Stop buttons ===
+        # 区切り
+        tk.Frame(inner, bg=C_BORDER_SOFT, height=1).pack(
+            fill=tk.X, pady=(22, 0))
+
+        # === Run / Stop ボタン (右下に Apple Primary Button 風) ===
         r4 = ttk.Frame(inner, style="Panel.TFrame")
-        r4.pack(fill=tk.X, pady=(16, 0))
+        r4.pack(fill=tk.X, pady=(20, 0))
 
-        ttk.Label(r4, text="ショートカット: F5=稼働 / Esc=停止 / Ctrl+S=保存 / F1=APIキー取得方法",
-                  style="Sub.TLabel").pack(side=tk.LEFT)
+        ttk.Label(r4,
+                  text="F5 稼働 · Esc 停止 · Ctrl+S 保存 · Ctrl+H 履歴",
+                  style="PanelSub.TLabel"
+                  ).pack(side=tk.LEFT)
 
-        self.stop_button = ttk.Button(r4, text="■ 停止", style="Stop.TButton",
+        self.stop_button = ttk.Button(r4, text="停止", style="Stop.TButton",
                                        command=self.stop_extraction,
                                        state=tk.DISABLED)
-        self.stop_button.pack(side=tk.RIGHT, padx=(6, 0))
+        self.stop_button.pack(side=tk.RIGHT, padx=(8, 0))
 
-        self.run_button = ttk.Button(r4, text="▶  稼  働", style="Run.TButton",
+        self.run_button = ttk.Button(r4, text="稼働", style="Primary.TButton",
                                       command=self.start_extraction)
         self.run_button.pack(side=tk.RIGHT)
-        Tooltip(self.run_button, "コメント抽出を開始します (F5)")
+        Tooltip(self.run_button, "コメント抽出を開始 (F5)")
 
     # ------------------------------------------------------------------
     # Results section
     # ------------------------------------------------------------------
 
     def _build_results_section(self):
-        outer = ttk.Frame(self.root, padding=(12, 6, 12, 6))
+        outer = ttk.Frame(self.root, padding=(28, 16, 28, 14))
         outer.pack(fill=tk.BOTH, expand=True)
 
         # ===== ダッシュボード (統計カード) =====
         self.dashboard_frame = ttk.Frame(outer, style="TFrame")
         self.dashboard_frame.pack(fill=tk.X, pady=(0, 6))
         self._dash_cards = {}
-        # カード定義: (key, ラベル)
+        # カード定義: (key, ラベル, emoji)
         card_defs = [
-            ("videos",      "取得動画数"),
-            ("comments",    "コメント数"),
-            ("avg_likes",   "平均高評価"),
-            ("max_likes",   "最高高評価"),
-            ("top_author",  "最多投稿者"),
-            ("replies",     "返信コメント"),
+            ("videos",      "動画",       ""),
+            ("comments",    "コメント",   ""),
+            ("avg_likes",   "平均 ♥",    ""),
+            ("max_likes",   "最高 ♥",    ""),
+            ("top_author",  "最多投稿者", ""),
+            ("replies",     "返信",       ""),
         ]
-        for i, (key, label) in enumerate(card_defs):
+        _val_font = ("Yu Gothic UI Semibold", 20) if sys.platform == "win32" else ("", 20, "bold")
+        for i, (key, label, icon) in enumerate(card_defs):
+            # Notion風 極薄境界のカード
             card = tk.Frame(self.dashboard_frame, bg=C_PANEL,
-                            highlightbackground=C_BORDER, highlightthickness=1)
+                            highlightbackground=C_BORDER,
+                            highlightthickness=1, bd=0)
             card.pack(side=tk.LEFT, fill=tk.X, expand=True,
-                      padx=(0 if i == 0 else 8, 0), ipadx=12, ipady=8)
-            ttk.Label(card, text=label, style="Sub.TLabel",
-                      background=C_PANEL).pack(anchor="w")
+                      padx=(0 if i == 0 else 10, 0), ipadx=18, ipady=14)
+            # ラベル (小さくミュート色)
+            ttk.Label(card, text=label,
+                      background=C_PANEL, foreground=C_MUTED,
+                      font=("Yu Gothic UI", 9) if sys.platform == "win32" else ("", 9)
+                      ).pack(anchor="w")
             value_var = tk.StringVar(value="—")
             vl = ttk.Label(card, textvariable=value_var,
-                           background=C_PANEL, foreground=C_ACCENT,
-                           font=("Yu Gothic UI Semibold", 14) if sys.platform == "win32" else ("", 14, "bold"))
-            vl.pack(anchor="w")
+                           background=C_PANEL, foreground=C_TEXT,
+                           font=_val_font)
+            vl.pack(anchor="w", pady=(4, 0))
             self._dash_cards[key] = value_var
 
         # ヘッダー (件数 + 保存ボタン)
         bar = ttk.Frame(outer)
-        bar.pack(fill=tk.X, pady=(0, 6))
+        bar.pack(fill=tk.X, pady=(10, 6))
 
-        lbl = ttk.Label(bar, text="④ 結果", style="Status.TLabel",
-                        font=("Yu Gothic UI", 10, "bold") if sys.platform == "win32" else ("", 10, "bold"))
+        lbl = ttk.Label(bar, text="結果",
+                        background=C_BG, foreground=C_TEXT,
+                        font=("Yu Gothic UI Semibold", 13) if sys.platform == "win32" else ("", 13, "bold"))
         lbl.pack(side=tk.LEFT)
 
-        # 結果内検索ボックス
-        ttk.Label(bar, text="  🔍 絞り込み:", style="Status.TLabel").pack(side=tk.LEFT)
-        self.search_var = tk.StringVar()
-        self.search_entry = ttk.Entry(bar, textvariable=self.search_var, width=24,
-                                      font=("", 10))
-        self.search_entry.pack(side=tk.LEFT, padx=(4, 0))
-        self.search_entry.bind("<KeyRelease>", self._on_search_changed)
-        Tooltip(self.search_entry,
-                "取得済みの結果から絞り込み検索します (インクリメンタル)。\n"
-                "コメント本文/タイトル/投稿者名のいずれかに含まれる文字列を入力。\n"
-                "大文字小文字は区別しません。\n"
-                "空欄で全件表示に戻ります。")
-        ttk.Button(bar, text="✕", width=3, style="Link.TButton",
-                   command=lambda: self.search_var.set("")).pack(side=tk.LEFT, padx=(2, 0))
-
-        self.count_label = ttk.Label(bar, text="  件数: 0", style="Status.TLabel")
-        self.count_label.pack(side=tk.LEFT)
+        # 件数表示 (Notion風 muted)
+        self.count_label = ttk.Label(bar, text="0 件",
+                                     background=C_BG, foreground=C_MUTED,
+                                     font=("Yu Gothic UI", 10) if sys.platform == "win32" else ("", 10))
+        self.count_label.pack(side=tk.LEFT, padx=(12, 0))
 
         # 前回稼働の実消費クォータ表示
         self.quota_result_var = tk.StringVar(value="")
         self.quota_result_label = ttk.Label(bar, textvariable=self.quota_result_var,
-                                            style="Status.TLabel")
-        self.quota_result_label.pack(side=tk.LEFT, padx=(24, 0))
+                                            background=C_BG, foreground=C_MUTED,
+                                            font=("Yu Gothic UI", 9) if sys.platform == "win32" else ("", 9))
+        self.quota_result_label.pack(side=tk.LEFT, padx=(16, 0))
         Tooltip(self.quota_result_label,
-                "直前の稼働で実際に消費したYouTube APIクォータ量 (実測値)。\n\n"
-                "※このアプリが把握できるのは「このアプリでの消費」のみ。\n"
-                "  実残量は Google Cloud Console でご確認ください。")
+                "直前の稼働で実際に消費したYouTube APIクォータ量 (実測値)。\n"
+                "実残量は Google Cloud Console でご確認ください。")
 
-        # 保存ボタン (メイン) - Excel形式
-        self.export_btn = ttk.Button(bar, text="💾 保存...",
-                                      style="Run.TButton",
+        # 結果内検索ボックス
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(bar, textvariable=self.search_var, width=24,
+                                      font=("", 10))
+        self.search_entry.pack(side=tk.LEFT, padx=(24, 0))
+        self.search_entry.bind("<KeyRelease>", self._on_search_changed)
+        Tooltip(self.search_entry,
+                "取得済みの結果から絞り込み検索 (タイトル/投稿者/本文)。")
+        # プレースホルダー風挙動 (フォーカス時に淡いラベル)
+        ttk.Label(bar, text="", background=C_BG, foreground=C_MUTED).pack(side=tk.LEFT)
+
+        # 保存ボタン (メイン)
+        self.export_btn = ttk.Button(bar, text="保存",
+                                      style="Primary.TButton",
                                       command=self.save_results, state=tk.DISABLED)
         self.export_btn.pack(side=tk.RIGHT)
         Tooltip(self.export_btn,
-                "現在の結果を任意の場所に保存します (Ctrl+S)\n"
-                "対応形式: Excel (.xlsx) / CSV (.csv) / TSV (.tsv) / JSON (.json)")
+                "現在の結果を任意の場所に保存 (Ctrl+S)\n"
+                "Excel / CSV / TSV / JSON 対応")
 
-        # CSV保存ボタン (サブ) - 素早いCSV保存
-        self.export_csv_btn = ttk.Button(bar, text="📄 CSV保存",
+        self.export_csv_btn = ttk.Button(bar, text="CSV",
+                                          style="Secondary.TButton",
                                           command=self.save_to_csv, state=tk.DISABLED)
-        self.export_csv_btn.pack(side=tk.RIGHT, padx=(0, 6))
+        self.export_csv_btn.pack(side=tk.RIGHT, padx=(0, 8))
         Tooltip(self.export_csv_btn,
-                "結果をCSVファイルとして素早く保存します (UTF-8 BOM付き / Excel対応)")
+                "結果をCSVファイルとして保存 (UTF-8 BOM / Excel対応)")
 
-        clear_btn = ttk.Button(bar, text="🗑 クリア", command=self._clear_results)
-        clear_btn.pack(side=tk.RIGHT, padx=(0, 6))
+        clear_btn = ttk.Button(bar, text="クリア",
+                               style="Toolbar.TButton",
+                               command=self._clear_results)
+        clear_btn.pack(side=tk.RIGHT, padx=(0, 8))
         Tooltip(clear_btn, "表示されている結果をクリアします")
 
         # ===== コンテンツエリア (左: Treeview / 右: プレビュー) =====
@@ -923,7 +1023,7 @@ class YouTubeCommentExtractorApp:
 
         # Treeview
         panel = tk.Frame(content, bg="white", highlightbackground=C_BORDER,
-                         highlightthickness=1)
+                         highlightthickness=1, bd=0)
         panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # ===== 右側プレビューパネル (動画サムネ + メタ情報) =====
@@ -958,7 +1058,8 @@ class YouTubeCommentExtractorApp:
         panel.grid_columnconfigure(0, weight=1)
 
         # ゼブラストライプ
-        self.tree.tag_configure("even", background="#f7fafd")
+        # Apple/Notion風 極薄ストライプ
+        self.tree.tag_configure("even", background="#fafafa")
         self.tree.tag_configure("odd", background="#ffffff")
 
         # イベント: ダブルクリックで詳細表示
@@ -1100,7 +1201,7 @@ class YouTubeCommentExtractorApp:
             return
         self.tree.delete(*self.tree.get_children())
         self.results.clear()
-        self.count_label.config(text="  件数: 0")
+        self.count_label.config(text="0 件")
         self.export_btn.config(state=tk.DISABLED)
         if hasattr(self, "export_csv_btn"):
             self.export_csv_btn.config(state=tk.DISABLED)
@@ -1116,10 +1217,13 @@ class YouTubeCommentExtractorApp:
     # ------------------------------------------------------------------
 
     def _build_status_bar(self):
-        frame = ttk.Frame(self.root, padding=(12, 4, 12, 10))
+        # 上部の細い区切り
+        tk.Frame(self.root, bg=C_BORDER_SOFT, height=1).pack(fill=tk.X)
+
+        frame = ttk.Frame(self.root, padding=(28, 10, 28, 14))
         frame.pack(fill=tk.X)
 
-        # プログレスバー + 進捗%
+        # プログレスバー (細い / ミニマル)
         pframe = ttk.Frame(frame)
         pframe.pack(fill=tk.X)
 
@@ -1130,14 +1234,17 @@ class YouTubeCommentExtractorApp:
         )
         self.progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        self.pct_label = ttk.Label(pframe, text="0%", style="Status.TLabel", width=6)
-        self.pct_label.pack(side=tk.LEFT, padx=(8, 0))
+        self.pct_label = ttk.Label(pframe, text="",
+                                   background=C_BG, foreground=C_MUTED,
+                                   font=("Yu Gothic UI", 9) if sys.platform == "win32" else ("", 9),
+                                   width=6)
+        self.pct_label.pack(side=tk.LEFT, padx=(10, 0))
 
         # ステータステキスト
         sframe = ttk.Frame(frame)
-        sframe.pack(fill=tk.X, pady=(6, 0))
+        sframe.pack(fill=tk.X, pady=(8, 0))
 
-        self.status_var = tk.StringVar(value="準備完了 - APIキーとURLを入力して「稼働」をクリックしてください")
+        self.status_var = tk.StringVar(value="準備完了")
         self.status_label = ttk.Label(sframe, textvariable=self.status_var,
                                        style="Status.TLabel")
         self.status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -1456,7 +1563,7 @@ class YouTubeCommentExtractorApp:
             # 全件表示
             for row in self.results:
                 self._add_row_to_tree(row)
-            self.count_label.config(text=f"  件数: {len(self.results)}")
+            self.count_label.config(text=f"{len(self.results):,} 件")
             return
 
         visible = 0
@@ -1469,7 +1576,7 @@ class YouTubeCommentExtractorApp:
                 visible += 1
 
         self.count_label.config(
-            text=f"  件数: {visible} / {len(self.results)} (絞り込み中)"
+            text=f"{visible:,} / {len(self.results):,} 件"
         )
 
     # ------------------------------------------------------------------
@@ -1681,53 +1788,61 @@ class YouTubeCommentExtractorApp:
     # ------------------------------------------------------------------
 
     def _build_preview_panel(self, parent):
-        """右側に動画プレビューパネルを配置。"""
+        """右側に動画プレビューパネル。Apple風のミニマルデザイン。"""
         self._thumb_cache = {}  # video_id -> PhotoImage
         self._thumb_lock = threading.Lock()
 
-        preview = tk.Frame(parent, bg=C_PANEL_ALT,
+        # Notion風 極薄境界のパネル
+        preview = tk.Frame(parent, bg=C_PANEL,
                            highlightbackground=C_BORDER,
-                           highlightthickness=1,
-                           width=280)
-        preview.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0))
+                           highlightthickness=1, bd=0,
+                           width=300)
+        preview.pack(side=tk.LEFT, fill=tk.Y, padx=(16, 0))
         preview.pack_propagate(False)
 
-        ttk.Label(preview, text="▶ プレビュー",
-                  background=C_PANEL_ALT,
-                  font=("Yu Gothic UI Semibold", 11) if sys.platform == "win32" else ("", 11, "bold"),
-                  ).pack(anchor="w", padx=10, pady=(10, 6))
+        # 見出し (ミュート色)
+        ttk.Label(preview, text="PREVIEW",
+                  background=C_PANEL, foreground=C_MUTED,
+                  font=("Yu Gothic UI", 9) if sys.platform == "win32" else ("", 9),
+                  ).pack(anchor="w", padx=20, pady=(18, 4))
 
-        # サムネイルエリア
-        self.thumb_label = tk.Label(preview, bg="#000000",
-                                     width=256, height=144, text="",
-                                     fg="#888")
-        self.thumb_label.pack(padx=10, pady=(0, 8))
+        # サムネイルエリア (角丸っぽい印象)
+        self.thumb_label = tk.Label(preview, bg=C_BG_SUBTLE,
+                                     width=260, height=146, text="行を選択",
+                                     fg=C_MUTED, bd=0,
+                                     font=("Yu Gothic UI", 9) if sys.platform == "win32" else ("", 9))
+        self.thumb_label.pack(padx=20, pady=(0, 14))
 
-        # メタ情報
-        self.preview_title_var = tk.StringVar(value="(行を選択してください)")
+        # 動画タイトル
+        self.preview_title_var = tk.StringVar(value="")
         ttk.Label(preview, textvariable=self.preview_title_var,
-                  background=C_PANEL_ALT, wraplength=256,
-                  font=("Yu Gothic UI", 10, "bold") if sys.platform == "win32" else ("", 10, "bold"),
-                  ).pack(anchor="w", padx=10, pady=(0, 4))
+                  background=C_PANEL, foreground=C_TEXT,
+                  wraplength=260,
+                  font=("Yu Gothic UI Semibold", 11) if sys.platform == "win32" else ("", 11, "bold"),
+                  ).pack(anchor="w", padx=20, pady=(0, 6))
 
         self.preview_meta_var = tk.StringVar(value="")
         ttk.Label(preview, textvariable=self.preview_meta_var,
-                  background=C_PANEL_ALT, foreground=C_MUTED, wraplength=256,
-                  ).pack(anchor="w", padx=10, pady=(0, 6))
+                  background=C_PANEL, foreground=C_MUTED, wraplength=260,
+                  font=("Yu Gothic UI", 9) if sys.platform == "win32" else ("", 9),
+                  ).pack(anchor="w", padx=20, pady=(0, 14))
 
-        # YouTubeで開くボタン
+        # YouTubeで開くボタン (Link style)
         self._preview_url = None
-        btn = ttk.Button(preview, text="▶ YouTubeで開く",
+        btn = ttk.Button(preview, text="YouTubeで開く →",
                          style="Link.TButton",
                          command=self._open_preview_video)
-        btn.pack(padx=10, pady=(0, 8), fill=tk.X)
+        btn.pack(padx=20, pady=(0, 16), anchor="w")
 
         if not PIL_AVAILABLE:
+            tk.Frame(preview, bg=C_BORDER_SOFT, height=1).pack(
+                fill=tk.X, padx=20, pady=(0, 10))
             ttk.Label(preview,
-                      text="(サムネイル表示には\nPillowのインストールが必要)\npip install Pillow",
-                      background=C_PANEL_ALT, foreground=C_WARN,
-                      justify="center",
-                      ).pack(padx=10, pady=(0, 10))
+                      text="サムネイル表示には Pillow が必要です",
+                      background=C_PANEL, foreground=C_MUTED,
+                      wraplength=260,
+                      font=("Yu Gothic UI", 8) if sys.platform == "win32" else ("", 8),
+                      ).pack(padx=20, pady=(0, 12))
 
     def _open_preview_video(self):
         if self._preview_url:
@@ -1897,10 +2012,10 @@ class YouTubeCommentExtractorApp:
                                      query in str(msg["data"][3]).lower() or
                                      query in str(msg["data"][4]).lower()):
                         self._add_row_to_tree(msg["data"])
-                    count_txt = f"  件数: {len(self.results)}"
+                    count_txt = f"{len(self.results):,} 件"
                     if query:
                         visible = len(self.tree.get_children())
-                        count_txt = f"  件数: {visible} / {len(self.results)} (絞り込み中)"
+                        count_txt = f"{visible:,} / {len(self.results):,} 件"
                     self.count_label.config(text=count_txt)
                     # ダッシュボードは一定間隔で更新 (頻繁すぎる更新を抑制)
                     self._dashboard_dirty = True
@@ -2004,7 +2119,7 @@ class YouTubeCommentExtractorApp:
         self.results.clear()
         self._seen_comment_keys = set()  # 重複除去用
         self._reply_count = 0
-        self.count_label.config(text="  件数: 0")
+        self.count_label.config(text="0 件")
         if hasattr(self, "_update_dashboard"):
             self._update_dashboard()
         self._update_progress(0)
