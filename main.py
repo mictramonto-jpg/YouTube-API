@@ -370,7 +370,7 @@ class YouTubeCommentExtractorApp:
 
         # ---------------- 入力 (Apple/Notion風の薄い境界) ----------------
         style.configure("TEntry",
-                        fieldbackground="white", padding=(10, 8),
+                        fieldbackground="white", padding=(8, 5),
                         bordercolor=C_BORDER, lightcolor=C_BORDER,
                         darkcolor=C_BORDER, borderwidth=1, relief="solid")
         style.map("TEntry",
@@ -380,7 +380,7 @@ class YouTubeCommentExtractorApp:
         style.configure("Error.TEntry",
                         fieldbackground=C_DANGER_SOFT,
                         bordercolor=C_DANGER, lightcolor=C_DANGER,
-                        darkcolor=C_DANGER, padding=(10, 8))
+                        darkcolor=C_DANGER, padding=(8, 5))
 
         # ---------------- ボタン階層 ----------------
         # Secondary (既定)
@@ -395,7 +395,7 @@ class YouTubeCommentExtractorApp:
 
         # Primary (Apple "Continue" 風 - 黒基調)
         style.configure("Primary.TButton",
-                        font=button_b, padding=(22, 10),
+                        font=button_b, padding=(18, 7),
                         background=C_ACCENT, foreground="white",
                         bordercolor=C_ACCENT, borderwidth=0,
                         relief="flat", focusthickness=0)
@@ -405,7 +405,7 @@ class YouTubeCommentExtractorApp:
 
         # 互換: Run = Primary
         style.configure("Run.TButton",
-                        font=button_b, padding=(22, 10),
+                        font=button_b, padding=(18, 7),
                         background=C_ACCENT, foreground="white",
                         bordercolor=C_ACCENT, borderwidth=0, relief="flat",
                         focusthickness=0)
@@ -544,25 +544,25 @@ class YouTubeCommentExtractorApp:
         hdr = ttk.Frame(self.root, style="TFrame")
         hdr.pack(fill=tk.X, padx=0, pady=0)
 
-        inner = ttk.Frame(hdr, style="TFrame", padding=(28, 22, 28, 16))
+        inner = ttk.Frame(hdr, style="TFrame", padding=(24, 14, 24, 10))
         inner.pack(fill=tk.X)
 
-        # タイトル (大きなセンス系のタイポグラフィ、アイコン控えめ)
+        # タイトル
         title = ttk.Label(inner, text=APP_TITLE, style="Header.TLabel")
         title.pack(side=tk.LEFT)
 
-        # サブタイトル (補足説明は薄いグレーで控えめに)
+        # サブタイトル
         sub = ttk.Label(inner,
-                        text="YouTubeコメントをシンプルに、美しく抽出。",
+                        text="YouTubeコメントをシンプルに抽出。",
                         style="HeaderSub.TLabel")
-        sub.pack(side=tk.LEFT, padx=(16, 0), pady=(10, 0))
+        sub.pack(side=tk.LEFT, padx=(14, 0), pady=(8, 0))
 
-        # 右上に小さなバージョン/ヒント表示
-        hint = ttk.Label(inner, text="⌘F5  /  F5",
+        # ショートカットヒント
+        hint = ttk.Label(inner, text="F5 稼働",
                          style="Sub.TLabel")
-        hint.pack(side=tk.RIGHT, pady=(12, 0))
+        hint.pack(side=tk.RIGHT, pady=(10, 0))
 
-        # 薄い区切り線 (Apple風 1px)
+        # 薄い区切り線
         div = tk.Frame(self.root, bg=C_BORDER, height=1)
         div.pack(fill=tk.X)
 
@@ -571,8 +571,8 @@ class YouTubeCommentExtractorApp:
     # ------------------------------------------------------------------
 
     def _build_input_section(self):
-        """Apple/Notion風: 大きな余白、薄い境界、セクション分離。"""
-        outer = ttk.Frame(self.root, padding=(28, 18, 28, 8))
+        """コンパクトに構成 - 結果セクションのスペースを確保。"""
+        outer = ttk.Frame(self.root, padding=(20, 10, 20, 4))
         outer.pack(fill=tk.X)
 
         # Notion風カード (白背景 + 極薄の境界線)
@@ -580,17 +580,32 @@ class YouTubeCommentExtractorApp:
                          highlightbackground=C_BORDER,
                          highlightthickness=1, bd=0)
         panel.pack(fill=tk.X)
+        self._input_panel = panel
 
-        inner = ttk.Frame(panel, style="Panel.TFrame", padding=(24, 22))
+        # ヘッダー (折りたたみボタン付き)
+        header_row = tk.Frame(panel, bg=C_PANEL)
+        header_row.pack(fill=tk.X, padx=18, pady=(10, 0))
+        self._input_collapsed = False
+        self._collapse_btn = ttk.Button(
+            header_row, text="▼ 設定を非表示",
+            style="Toolbar.TButton",
+            command=self._toggle_input_section,
+        )
+        self._collapse_btn.pack(side=tk.RIGHT)
+        Tooltip(self._collapse_btn,
+                "設定エリアを非表示にして結果テーブルを広く表示します")
+
+        inner = ttk.Frame(panel, style="Panel.TFrame", padding=(18, 6, 18, 12))
         inner.pack(fill=tk.X)
+        self._input_inner = inner
 
         # === Section 1: API Key ===
         lbl1 = ttk.Label(inner, text="API Key",
                         style="FieldLabel.TLabel")
-        lbl1.pack(anchor="w", pady=(0, 8))
+        lbl1.pack(anchor="w", pady=(0, 4))
 
         r1b = ttk.Frame(inner, style="Panel.TFrame")
-        r1b.pack(fill=tk.X, pady=(0, 6))
+        r1b.pack(fill=tk.X, pady=(0, 4))
 
         self.api_key_var = tk.StringVar()
         self.api_key_entry = ttk.Entry(r1b, textvariable=self.api_key_var,
@@ -603,7 +618,7 @@ class YouTubeCommentExtractorApp:
         self.toggle_key_btn = ttk.Button(r1b, text="表示", width=6,
                                           style="Toolbar.TButton",
                                           command=self._toggle_api_key)
-        self.toggle_key_btn.pack(side=tk.LEFT, padx=(8, 0))
+        self.toggle_key_btn.pack(side=tk.LEFT, padx=(6, 0))
         Tooltip(self.toggle_key_btn, "APIキーの表示/非表示を切り替えます")
 
         clear_key_btn = ttk.Button(r1b, text="✕", width=3,
@@ -612,9 +627,9 @@ class YouTubeCommentExtractorApp:
         clear_key_btn.pack(side=tk.LEFT, padx=(4, 0))
         Tooltip(clear_key_btn, "APIキー欄をクリアします")
 
-        # ヘルプリンク群 (Notion風に小さく目立たず)
+        # ヘルプリンク群 (小さく控えめに)
         help_row = ttk.Frame(inner, style="Panel.TFrame")
-        help_row.pack(fill=tk.X, pady=(6, 0))
+        help_row.pack(fill=tk.X, pady=(2, 0))
         ttk.Button(help_row, text="取得方法",
                    style="Link.TButton",
                    command=self.show_api_guide).pack(side=tk.LEFT)
@@ -626,18 +641,20 @@ class YouTubeCommentExtractorApp:
 
         # 区切り (極薄)
         tk.Frame(inner, bg=C_BORDER_SOFT, height=1).pack(
-            fill=tk.X, pady=(22, 0))
+            fill=tk.X, pady=(10, 0))
 
         # === Section 2: URL ===
-        ttk.Label(inner, text="URL",
-                  style="FieldLabel.TLabel").pack(anchor="w", pady=(18, 4))
-        ttk.Label(inner,
-                  text="チャンネルURL または 動画URL。複数入力・CSV一括読込可。",
-                  style="PanelSub.TLabel").pack(anchor="w", pady=(0, 8))
+        url_label_row = ttk.Frame(inner, style="Panel.TFrame")
+        url_label_row.pack(fill=tk.X, pady=(10, 4))
+        ttk.Label(url_label_row, text="URL",
+                  style="FieldLabel.TLabel").pack(side=tk.LEFT)
+        ttk.Label(url_label_row,
+                  text="チャンネルURL または 動画URL (複数可・CSV一括可)",
+                  style="PanelSub.TLabel").pack(side=tk.LEFT, padx=(8, 0))
 
         # URL 入力行を管理するコンテナ
         self.url_list_frame = ttk.Frame(inner, style="Panel.TFrame")
-        self.url_list_frame.pack(fill=tk.X, pady=(0, 4))
+        self.url_list_frame.pack(fill=tk.X, pady=(0, 2))
 
         # 複数URLを保持するリスト (各要素は PlaceholderEntry ウィジェット)
         self.url_entries = []
@@ -649,23 +666,19 @@ class YouTubeCommentExtractorApp:
 
         # URL 操作ボタン列
         r2btn = ttk.Frame(inner, style="Panel.TFrame")
-        r2btn.pack(fill=tk.X, pady=(4, 0))
+        r2btn.pack(fill=tk.X, pady=(2, 0))
 
         add_url_btn = ttk.Button(r2btn, text="＋ URLを追加",
                                  style="Link.TButton",
                                  command=self._add_url_row)
         add_url_btn.pack(side=tk.LEFT)
-        Tooltip(add_url_btn, "新しいURL入力欄を追加します。")
 
         ttk.Label(r2btn, text="·", style="PanelSub.TLabel").pack(side=tk.LEFT, padx=4)
 
-        csv_btn = ttk.Button(r2btn, text="CSVから一括読込",
+        csv_btn = ttk.Button(r2btn, text="CSVから読込",
                              style="Link.TButton",
                              command=self._load_urls_from_csv)
         csv_btn.pack(side=tk.LEFT)
-        Tooltip(csv_btn,
-                "CSV/TXTファイルからURLを一括で読み込みます。\n"
-                "1行に1つのURL、またはCSVの任意列に記載。")
 
         ttk.Label(r2btn, text="·", style="PanelSub.TLabel").pack(side=tk.LEFT, padx=4)
 
@@ -673,39 +686,25 @@ class YouTubeCommentExtractorApp:
                                    style="Link.TButton",
                                    command=self._clear_all_urls)
         clear_all_btn.pack(side=tk.LEFT)
-        Tooltip(clear_all_btn, "全てのURL入力欄をクリアします。")
 
-        # 後方互換: 旧コードの self.url_entry 参照を先頭のエントリに紐付け
-        self.url_entry = self.url_entries[0]
+        # 取得範囲 (インラインで同じ行)
+        ttk.Label(r2btn, text="│", style="PanelSub.TLabel").pack(
+            side=tk.LEFT, padx=10)
 
-        # 区切り
-        tk.Frame(inner, bg=C_BORDER_SOFT, height=1).pack(
-            fill=tk.X, pady=(22, 0))
-
-        # === Section 3: 取得範囲 ===
-        ttk.Label(inner, text="取得範囲",
-                  style="FieldLabel.TLabel").pack(anchor="w", pady=(18, 8))
-
-        r2c = ttk.Frame(inner, style="Panel.TFrame")
-        r2c.pack(fill=tk.X, pady=(0, 12))
-
-        # "channel" = URL のチャンネル内の複数動画から取得
-        # "video"   = URL で指定した動画のみから取得 (デフォルト)
         self.extract_mode_var = tk.StringVar(value="video")
-
         rb_video = ttk.Radiobutton(
-            r2c, text="指定した動画のみ",
+            r2btn, text="動画URLのみ",
             variable=self.extract_mode_var, value="video",
             style="Panel.TRadiobutton",
             command=self._on_mode_changed,
         )
-        rb_video.pack(side=tk.LEFT, padx=(0, 28))
+        rb_video.pack(side=tk.LEFT, padx=(0, 12))
         Tooltip(rb_video,
                 "URLで指定した動画のコメントだけを取得します。\n"
-                "動画URL (/watch?v=...、/shorts/...、/live/...) を入力してください。")
+                "動画URL (/watch?v=...、/shorts/...、/live/...) を入力。")
 
         rb_channel = ttk.Radiobutton(
-            r2c, text="チャンネル全体",
+            r2btn, text="チャンネル全体",
             variable=self.extract_mode_var, value="channel",
             style="Panel.TRadiobutton",
             command=self._on_mode_changed,
@@ -715,13 +714,18 @@ class YouTubeCommentExtractorApp:
                 "URLのチャンネルから複数動画のコメントを取得。\n"
                 "「リサーチする動画数」で件数を指定できます。")
 
+        # 後方互換: 旧コードの self.url_entry 参照を先頭のエントリに紐付け
+        self.url_entry = self.url_entries[0]
+
         # 区切り
         tk.Frame(inner, bg=C_BORDER_SOFT, height=1).pack(
-            fill=tk.X, pady=(22, 0))
+            fill=tk.X, pady=(10, 0))
 
         # === Section 4: 抽出条件 ===
-        ttk.Label(inner, text="抽出条件",
-                  style="FieldLabel.TLabel").pack(anchor="w", pady=(18, 12))
+        cond_label_row = ttk.Frame(inner, style="Panel.TFrame")
+        cond_label_row.pack(fill=tk.X, pady=(10, 4))
+        ttk.Label(cond_label_row, text="抽出条件",
+                  style="FieldLabel.TLabel").pack(side=tk.LEFT)
 
         r3 = ttk.Frame(inner, style="Panel.TFrame")
         r3.pack(fill=tk.X, pady=(0, 0))
@@ -731,26 +735,24 @@ class YouTubeCommentExtractorApp:
         r3b = ttk.Frame(inner, style="Panel.TFrame")
         r3b.pack(fill=tk.X)
 
-        # リサーチする動画数
+        # 動画数
         f1 = ttk.Frame(r3b, style="Panel.TFrame")
-        f1.pack(side=tk.LEFT, padx=(0, 24))
-        self.max_videos_label = ttk.Label(f1, text="リサーチする動画数",
+        f1.pack(side=tk.LEFT, padx=(0, 16))
+        self.max_videos_label = ttk.Label(f1, text="動画数",
                                           style="Panel.TLabel")
         self.max_videos_label.pack(anchor="w")
         self.max_videos_var = tk.StringVar(value="30")
-        self.e_videos = ttk.Entry(f1, textvariable=self.max_videos_var, width=10,
+        self.e_videos = ttk.Entry(f1, textvariable=self.max_videos_var, width=8,
                                    font=("", 10), justify="right")
         self.e_videos.pack(anchor="w", pady=(2, 0))
         Tooltip(self.e_videos,
-                "上位表示されている動画から順に、この件数までを対象にします。\n"
-                "例: 30 と入力すると、上位30件の動画のコメントを処理します。\n"
-                "URLの動画数が少ない場合は、その件数まで処理します。\n"
-                "※「指定した動画のみ」モードでは無効になります。")
+                "リサーチする動画数 (チャンネル全体モードのみ)。\n"
+                "上位から順にこの件数までを対象にします。")
 
         # 並び順 (チャンネル全体モード専用)
         f_order = ttk.Frame(r3b, style="Panel.TFrame")
-        f_order.pack(side=tk.LEFT, padx=(0, 24))
-        self.order_label = ttk.Label(f_order, text="動画の並び順",
+        f_order.pack(side=tk.LEFT, padx=(0, 16))
+        self.order_label = ttk.Label(f_order, text="並び順",
                                      style="Panel.TLabel")
         self.order_label.pack(anchor="w")
         # API値(str) → 表示ラベル(str) の対応表
@@ -771,36 +773,31 @@ class YouTubeCommentExtractorApp:
         self.order_combo = ttk.Combobox(
             f_order, textvariable=self.order_display_var,
             values=[lbl for lbl, _ in self._order_options],
-            state="readonly", width=18, font=("", 10),
+            state="readonly", width=14, font=("", 10),
         )
         self.order_combo.pack(anchor="w", pady=(2, 0))
         self.order_combo.bind("<<ComboboxSelected>>", self._on_order_changed)
         Tooltip(self.order_combo,
-                "チャンネル全体モードでの動画の並び順を指定します:\n"
-                "・新しい順 : 最新の動画から (最も高速・低コスト)\n"
-                "・視聴回数順: 再生数が多い動画から\n"
-                "・評価順  : 高評価が多い動画から\n"
-                "・関連度順: YouTube推奨アルゴリズム順\n"
-                "・古い順  : 最古の動画から\n"
-                "※「指定した動画のみ」モードでは使用されません。\n"
-                "※新しい順以外はAPIクォータ消費が多くなります (100 units/リクエスト)。")
+                "チャンネル全体モードでの動画の並び順:\n"
+                "・新しい順: 最新から (最も高速)\n"
+                "・視聴回数順/評価順/関連度順/古い順: クォータ消費多")
 
-        # 高評価数の下限
+        # ♥下限
         f2 = ttk.Frame(r3b, style="Panel.TFrame")
-        f2.pack(side=tk.LEFT, padx=(0, 24))
-        ttk.Label(f2, text="コメント高評価数の下限", style="Panel.TLabel").pack(anchor="w")
+        f2.pack(side=tk.LEFT, padx=(0, 16))
+        ttk.Label(f2, text="♥下限", style="Panel.TLabel").pack(anchor="w")
         self.min_likes_var = tk.StringVar(value="0")
-        e_likes = ttk.Entry(f2, textvariable=self.min_likes_var, width=10,
+        e_likes = ttk.Entry(f2, textvariable=self.min_likes_var, width=8,
                               font=("", 10), justify="right")
         e_likes.pack(anchor="w", pady=(2, 0))
         Tooltip(e_likes,
-                "この数値以上の高評価を持つコメントのみを出力します。\n"
-                "0 または空欄でフィルタなし (全コメント対象)。")
+                "コメント高評価数の下限。この数値以上のコメントのみ抽出。\n"
+                "0 または空欄でフィルタなし。")
 
         # 含まれる文字 + AND/OR モード
         f3 = ttk.Frame(r3b, style="Panel.TFrame")
-        f3.pack(side=tk.LEFT, padx=(0, 24))
-        ttk.Label(f3, text="コメントに含まれる文字 (カンマ/空白区切りで複数可)",
+        f3.pack(side=tk.LEFT, padx=(0, 16))
+        ttk.Label(f3, text="含まれる文字",
                   style="Panel.TLabel").pack(anchor="w")
         f3row = ttk.Frame(f3, style="Panel.TFrame")
         f3row.pack(anchor="w", pady=(2, 0))
@@ -826,82 +823,66 @@ class YouTubeCommentExtractorApp:
 
         # 投稿者名フィルタ
         f4 = ttk.Frame(r3b, style="Panel.TFrame")
-        f4.pack(side=tk.LEFT, padx=(0, 24))
-        ttk.Label(f4, text="投稿者名に含まれる文字",
+        f4.pack(side=tk.LEFT, padx=(0, 16))
+        ttk.Label(f4, text="投稿者",
                   style="Panel.TLabel").pack(anchor="w")
         self.author_filter_entry = PlaceholderEntry(
-            f4, placeholder="例: @channel",
-            width=16, font=("", 10))
+            f4, placeholder="@channel",
+            width=14, font=("", 10))
         self.author_filter_entry.pack(anchor="w", pady=(2, 0))
         Tooltip(self.author_filter_entry,
-                "投稿者名にこの文字列を含むコメントのみを出力します (大文字小文字を区別しない)。\n"
+                "投稿者名にこの文字列を含むコメントのみを出力 (大文字小文字無視)。\n"
                 "空欄でフィルタなし。")
 
-        # === Row 3c: 日付範囲フィルタ + 返信・重複除去オプション ===
-        r3c = ttk.Frame(inner, style="Panel.TFrame")
-        r3c.pack(fill=tk.X, pady=(10, 0))
-
-        # 日付 From / To
-        f_date = ttk.Frame(r3c, style="Panel.TFrame")
-        f_date.pack(side=tk.LEFT, padx=(0, 24))
-        ttk.Label(f_date, text="コメント投稿日の範囲 (YYYY-MM-DD)",
+        # 日付範囲 (同じ行に配置)
+        f_date = ttk.Frame(r3b, style="Panel.TFrame")
+        f_date.pack(side=tk.LEFT, padx=(0, 16))
+        ttk.Label(f_date, text="投稿日の範囲",
                   style="Panel.TLabel").pack(anchor="w")
         f_date_row = ttk.Frame(f_date, style="Panel.TFrame")
         f_date_row.pack(anchor="w", pady=(2, 0))
         self.date_from_entry = PlaceholderEntry(
             f_date_row, placeholder="From",
-            width=12, font=("", 10))
+            width=10, font=("", 10))
         self.date_from_entry.pack(side=tk.LEFT)
         ttk.Label(f_date_row, text="〜", style="Panel.TLabel").pack(
-            side=tk.LEFT, padx=4)
+            side=tk.LEFT, padx=2)
         self.date_to_entry = PlaceholderEntry(
             f_date_row, placeholder="To",
-            width=12, font=("", 10))
+            width=10, font=("", 10))
         self.date_to_entry.pack(side=tk.LEFT)
         Tooltip(self.date_from_entry,
-                "コメント投稿日の下限 (この日以降)\n"
-                "形式: YYYY-MM-DD (例: 2024-01-01)\n"
-                "空欄で下限なし")
+                "コメント投稿日の下限。YYYY-MM-DD 形式 (例: 2024-01-01)。\n"
+                "空欄で下限なし。")
         Tooltip(self.date_to_entry,
-                "コメント投稿日の上限 (この日まで)\n"
-                "形式: YYYY-MM-DD (例: 2024-12-31)\n"
-                "空欄で上限なし")
+                "コメント投稿日の上限。YYYY-MM-DD 形式。\n"
+                "空欄で上限なし。")
 
-        # チェックボックス群
-        f_opts = ttk.Frame(r3c, style="Panel.TFrame")
-        f_opts.pack(side=tk.LEFT, padx=(0, 24))
-        ttk.Label(f_opts, text="オプション",
-                  style="Panel.TLabel").pack(anchor="w")
-        f_opts_row = ttk.Frame(f_opts, style="Panel.TFrame")
-        f_opts_row.pack(anchor="w", pady=(2, 0))
+        # チェックボックス (オプション) - 同じ行に
+        f_opts = ttk.Frame(r3b, style="Panel.TFrame")
+        f_opts.pack(side=tk.LEFT, padx=(0, 0), pady=(16, 0))
 
         self.include_replies_var = tk.BooleanVar(value=False)
         cb_replies = ttk.Checkbutton(
-            f_opts_row, text="返信コメントも取得",
+            f_opts, text="返信も取得",
             variable=self.include_replies_var,
             style="Panel.TCheckbutton")
-        cb_replies.pack(side=tk.LEFT, padx=(0, 12))
+        cb_replies.pack(side=tk.LEFT, padx=(0, 8))
         Tooltip(cb_replies,
-                "トップレベルのコメントだけでなく、それに対する返信コメントも取得します。\n"
-                "※APIクォータの追加消費はありませんが、データ量は増えます。")
+                "返信コメントも取得します (APIクォータの追加消費なし)。")
 
         self.dedup_var = tk.BooleanVar(value=True)
         cb_dedup = ttk.Checkbutton(
-            f_opts_row, text="重複コメントを除去",
+            f_opts, text="重複除去",
             variable=self.dedup_var,
             style="Panel.TCheckbutton")
         cb_dedup.pack(side=tk.LEFT)
         Tooltip(cb_dedup,
-                "同じテキストのコメント (コピペ・スパム等) を除外します。\n"
-                "投稿者名+本文の組み合わせで重複判定します。")
+                "同じ投稿者+本文のコメント(コピペ・スパム等)を除外します。")
 
-        # 区切り
-        tk.Frame(inner, bg=C_BORDER_SOFT, height=1).pack(
-            fill=tk.X, pady=(22, 0))
-
-        # === Run / Stop ボタン (右下に Apple Primary Button 風) ===
+        # === Run / Stop ボタン ===
         r4 = ttk.Frame(inner, style="Panel.TFrame")
-        r4.pack(fill=tk.X, pady=(20, 0))
+        r4.pack(fill=tk.X, pady=(10, 0))
 
         ttk.Label(r4,
                   text="F5 稼働 · Esc 停止 · Ctrl+S 保存 · Ctrl+H 履歴",
@@ -923,7 +904,7 @@ class YouTubeCommentExtractorApp:
     # ------------------------------------------------------------------
 
     def _build_results_section(self):
-        outer = ttk.Frame(self.root, padding=(28, 16, 28, 14))
+        outer = ttk.Frame(self.root, padding=(20, 8, 20, 10))
         outer.pack(fill=tk.BOTH, expand=True)
 
         # ===== ダッシュボード (統計カード) =====
@@ -939,14 +920,14 @@ class YouTubeCommentExtractorApp:
             ("top_author",  "最多投稿者", ""),
             ("replies",     "返信",       ""),
         ]
-        _val_font = ("Yu Gothic UI Semibold", 20) if sys.platform == "win32" else ("", 20, "bold")
+        _val_font = ("Yu Gothic UI Semibold", 16) if sys.platform == "win32" else ("", 16, "bold")
         for i, (key, label, icon) in enumerate(card_defs):
-            # Notion風 極薄境界のカード
+            # Notion風 極薄境界のカード (コンパクト)
             card = tk.Frame(self.dashboard_frame, bg=C_PANEL,
                             highlightbackground=C_BORDER,
                             highlightthickness=1, bd=0)
             card.pack(side=tk.LEFT, fill=tk.X, expand=True,
-                      padx=(0 if i == 0 else 10, 0), ipadx=18, ipady=14)
+                      padx=(0 if i == 0 else 8, 0), ipadx=12, ipady=8)
             # ラベル (小さくミュート色)
             ttk.Label(card, text=label,
                       background=C_PANEL, foreground=C_MUTED,
@@ -956,7 +937,7 @@ class YouTubeCommentExtractorApp:
             vl = ttk.Label(card, textvariable=value_var,
                            background=C_PANEL, foreground=C_TEXT,
                            font=_val_font)
-            vl.pack(anchor="w", pady=(4, 0))
+            vl.pack(anchor="w", pady=(2, 0))
             self._dash_cards[key] = value_var
 
         # ヘッダー (件数 + 保存ボタン)
@@ -1220,7 +1201,7 @@ class YouTubeCommentExtractorApp:
         # 上部の細い区切り
         tk.Frame(self.root, bg=C_BORDER_SOFT, height=1).pack(fill=tk.X)
 
-        frame = ttk.Frame(self.root, padding=(28, 10, 28, 14))
+        frame = ttk.Frame(self.root, padding=(20, 6, 20, 8))
         frame.pack(fill=tk.X)
 
         # プログレスバー (細い / ミニマル)
@@ -1480,6 +1461,17 @@ class YouTubeCommentExtractorApp:
             if u:
                 urls.append(u)
         return urls
+
+    def _toggle_input_section(self):
+        """設定エリアの表示/非表示をトグル。"""
+        if self._input_collapsed:
+            self._input_inner.pack(fill=tk.X)
+            self._collapse_btn.config(text="▼ 設定を非表示")
+            self._input_collapsed = False
+        else:
+            self._input_inner.pack_forget()
+            self._collapse_btn.config(text="▶ 設定を表示")
+            self._input_collapsed = True
 
     def _toggle_api_key(self):
         if self._key_visible:
@@ -2129,6 +2121,10 @@ class YouTubeCommentExtractorApp:
         self._start_time = time.time()
         self._set_running_state(True)
         self._update_elapsed()
+
+        # 自動で設定エリアを折りたたんで結果を広く
+        if not self._input_collapsed:
+            self._toggle_input_section()
 
         # 現在実行中の設定を保存 (履歴用)
         self._current_params = {
