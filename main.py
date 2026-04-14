@@ -820,6 +820,33 @@ class YouTubeCommentExtractorApp:
         outer = ttk.Frame(self.root, padding=(12, 6, 12, 6))
         outer.pack(fill=tk.BOTH, expand=True)
 
+        # ===== ダッシュボード (統計カード) =====
+        self.dashboard_frame = ttk.Frame(outer, style="TFrame")
+        self.dashboard_frame.pack(fill=tk.X, pady=(0, 6))
+        self._dash_cards = {}
+        # カード定義: (key, ラベル)
+        card_defs = [
+            ("videos",      "取得動画数"),
+            ("comments",    "コメント数"),
+            ("avg_likes",   "平均高評価"),
+            ("max_likes",   "最高高評価"),
+            ("top_author",  "最多投稿者"),
+            ("replies",     "返信コメント"),
+        ]
+        for i, (key, label) in enumerate(card_defs):
+            card = tk.Frame(self.dashboard_frame, bg=C_PANEL,
+                            highlightbackground=C_BORDER, highlightthickness=1)
+            card.pack(side=tk.LEFT, fill=tk.X, expand=True,
+                      padx=(0 if i == 0 else 8, 0), ipadx=12, ipady=8)
+            ttk.Label(card, text=label, style="Sub.TLabel",
+                      background=C_PANEL).pack(anchor="w")
+            value_var = tk.StringVar(value="—")
+            vl = ttk.Label(card, textvariable=value_var,
+                           background=C_PANEL, foreground=C_ACCENT,
+                           font=("Yu Gothic UI Semibold", 14) if sys.platform == "win32" else ("", 14, "bold"))
+            vl.pack(anchor="w")
+            self._dash_cards[key] = value_var
+
         # ヘッダー (件数 + 保存ボタン)
         bar = ttk.Frame(outer)
         bar.pack(fill=tk.X, pady=(0, 6))
@@ -1056,6 +1083,9 @@ class YouTubeCommentExtractorApp:
         if hasattr(self, "export_csv_btn"):
             self.export_csv_btn.config(state=tk.DISABLED)
         self.quota_result_var.set("")
+        self._reply_count = 0
+        if hasattr(self, "_update_dashboard"):
+            self._update_dashboard()
         self.progress_var.set(0)
         self.status_var.set("準備完了")
 
@@ -1347,6 +1377,54 @@ class YouTubeCommentExtractorApp:
                 if hasattr(self, "export_csv_btn"):
                     self.export_csv_btn.config(state=tk.NORMAL)
 
+    def _update_dashboard(self):
+        """ダッシュボードカードの数値を再計算して表示。"""
+        if not hasattr(self, "_dash_cards"):
+            return
+        results = self.results
+        if not results:
+            for k in self._dash_cards:
+                self._dash_cards[k].set("—")
+            return
+
+        # 動画数 (重複除外)
+        video_urls = set(r[0] for r in results)
+        # コメント数
+        n_comments = len(results)
+        # 高評価統計
+        likes_list = []
+        for r in results:
+            try:
+                likes_list.append(int(r[5]))
+            except (ValueError, TypeError):
+                pass
+        avg_likes = sum(likes_list) / len(likes_list) if likes_list else 0
+        max_likes = max(likes_list) if likes_list else 0
+        # 投稿者統計
+        author_counts = {}
+        for r in results:
+            a = r[3]
+            if a:
+                author_counts[a] = author_counts.get(a, 0) + 1
+        top_author = ""
+        top_count = 0
+        if author_counts:
+            top_author, top_count = max(author_counts.items(), key=lambda kv: kv[1])
+
+        # 返信数 (7列目以降に is_reply が入っていれば)
+        # 現状の row は (url, title, date, author, text, likes, comment_date) なので0
+        replies_count = getattr(self, "_reply_count", 0)
+
+        self._dash_cards["videos"].set(f"{len(video_urls):,}")
+        self._dash_cards["comments"].set(f"{n_comments:,}")
+        self._dash_cards["avg_likes"].set(f"{avg_likes:,.1f}")
+        self._dash_cards["max_likes"].set(f"{max_likes:,}")
+        self._dash_cards["top_author"].set(
+            f"{(top_author[:14] + '…') if len(top_author) > 14 else top_author}"
+            + (f" ({top_count})" if top_count else "")
+        )
+        self._dash_cards["replies"].set(f"{replies_count:,}")
+
     def _on_search_changed(self, _evt=None):
         """結果テーブル内のインクリメンタル絞り込み検索。"""
         query = self.search_var.get().strip().lower()
@@ -1446,12 +1524,28 @@ class YouTubeCommentExtractorApp:
                     self._update_progress(msg["value"])
                 elif kind == "row":
                     self.results.append(msg["data"])
-                    self._add_row_to_tree(msg["data"])
-                    self.count_label.config(text=f"  件数: {len(self.results)}")
+                    # 絞り込み中の場合は検索条件に合致する場合のみ追加表示
+                    query = self.search_var.get().strip().lower() if hasattr(self, "search_var") else ""
+                    if not query or (query in str(msg["data"][1]).lower() or
+                                     query in str(msg["data"][3]).lower() or
+                                     query in str(msg["data"][4]).lower()):
+                        self._add_row_to_tree(msg["data"])
+                    count_txt = f"  件数: {len(self.results)}"
+                    if query:
+                        visible = len(self.tree.get_children())
+                        count_txt = f"  件数: {visible} / {len(self.results)} (絞り込み中)"
+                    self.count_label.config(text=count_txt)
+                    # ダッシュボードは一定間隔で更新 (頻繁すぎる更新を抑制)
+                    self._dashboard_dirty = True
                 elif kind == "done":
                     self._on_done(msg.get("error"))
         except queue.Empty:
             pass
+        # ダッシュボードが汚れていたら更新 (メッセージ処理後1回)
+        if getattr(self, "_dashboard_dirty", False):
+            self._update_dashboard()
+            self._dashboard_dirty = False
+
         self.root.after(80, self._poll_queue)
 
     # ------------------------------------------------------------------
@@ -1542,7 +1636,10 @@ class YouTubeCommentExtractorApp:
         self.tree.delete(*self.tree.get_children())
         self.results.clear()
         self._seen_comment_keys = set()  # 重複除去用
+        self._reply_count = 0
         self.count_label.config(text="  件数: 0")
+        if hasattr(self, "_update_dashboard"):
+            self._update_dashboard()
         self._update_progress(0)
         self.elapsed_var.set("")
 
@@ -1720,6 +1817,9 @@ class YouTubeCommentExtractorApp:
                             continue
                         seen_keys.add(key)
 
+                    if c.get("is_reply"):
+                        self._reply_count = getattr(self, "_reply_count", 0) + 1
+
                     put({
                         "type": "row",
                         "data": (
@@ -1793,6 +1893,10 @@ class YouTubeCommentExtractorApp:
             self.status_var.set(
                 f"✓ 完了！ 合計 {len(self.results)} 件のコメントを取得しました{quota_text}"
             )
+
+        # ダッシュボード最終更新
+        if hasattr(self, "_update_dashboard"):
+            self._update_dashboard()
 
         if self.results:
             self._auto_save()
