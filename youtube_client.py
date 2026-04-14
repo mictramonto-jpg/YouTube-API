@@ -482,17 +482,63 @@ class YouTubeClient:
         video_id: str,
         min_likes: int = 0,
         text_filter: str = "",
+        text_filter_mode: str = "AND",
+        include_replies: bool = False,
+        author_filter: str = "",
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
         cancel_check: Optional[Callable[[], bool]] = None,
     ) -> List[Dict]:
         """
-        Retrieve top-level comments for a video, ordered by relevance.
+        Retrieve comments for a video, ordered by relevance.
 
-        Filters are applied on-the-fly:
-          - min_likes: only include comments with >= this many likes
-          - text_filter: only include comments whose text contains this string
+        Args:
+            min_likes: 最低高評価数 (0 = フィルタなし)
+            text_filter: カンマ/スペース区切りで複数キーワード指定可
+            text_filter_mode: "AND" = 全含む / "OR" = いずれか含む
+            include_replies: True で返信コメントも取得
+            author_filter: 投稿者名に含まれる文字列 (空でフィルタなし)
+            date_from / date_to: ISO 8601 形式の日付範囲 (inclusive)
+            cancel_check: キャンセル判定コールバック
+
+        Returns:
+            各要素に 'is_reply' (bool), 'parent_id' (str) フィールドを追加
         """
-        comments = []  # type: List[Dict]
+        # フィルタキーワード分解 (空白 / カンマ区切り)
+        keywords = [k for k in re.split(r"[\s,、，]+", text_filter.strip()) if k]
+
+        def _passes_filters(snippet: dict) -> bool:
+            like_count = snippet.get("likeCount", 0)
+            text = snippet.get("textOriginal", "")
+            author = snippet.get("authorDisplayName", "")
+            published = snippet.get("publishedAt", "")
+
+            if min_likes > 0 and like_count < min_likes:
+                return False
+
+            if keywords:
+                if text_filter_mode == "OR":
+                    if not any(k in text for k in keywords):
+                        return False
+                else:  # AND
+                    if not all(k in text for k in keywords):
+                        return False
+
+            if author_filter and author_filter.lower() not in author.lower():
+                return False
+
+            if date_from and published and published < date_from:
+                return False
+            if date_to and published and published > date_to:
+                return False
+
+            return True
+
+        results = []  # type: List[Dict]
         next_page = None
+
+        # part に replies を含めると返信もまとめて取得 (commentThreads.list はクォータ1)
+        part_fields = "snippet,replies" if include_replies else "snippet"
 
         while True:
             if cancel_check and cancel_check():
@@ -500,10 +546,11 @@ class YouTubeClient:
 
             try:
                 _next = next_page
+                _part = part_fields
                 resp = self._call(
                     "commentThreads.list",
                     lambda: self.youtube.commentThreads().list(
-                        part="snippet",
+                        part=_part,
                         videoId=video_id,
                         order="relevance",
                         maxResults=100,
@@ -513,37 +560,51 @@ class YouTubeClient:
             except HttpError as e:
                 status = e.resp.status
                 if status in (403, 404):
-                    # 403 = comments disabled, 404 = video not found
                     logger.info("Skipping comments for %s (HTTP %d)", video_id, status)
                     break
                 raise APIError(e) from e
 
             for item in resp.get("items", []):
+                # --- トップレベルコメント ---
                 try:
-                    snippet = item["snippet"]["topLevelComment"]["snippet"]
+                    top = item["snippet"]["topLevelComment"]
+                    snippet = top["snippet"]
+                    top_id = top["id"]
                 except (KeyError, TypeError):
                     continue
 
-                like_count = snippet.get("likeCount", 0)
-                text = snippet.get("textOriginal", "")
+                if _passes_filters(snippet):
+                    results.append({
+                        "comment_id": top_id,
+                        "is_reply": False,
+                        "parent_id": "",
+                        "author": snippet.get("authorDisplayName", ""),
+                        "text": snippet.get("textOriginal", ""),
+                        "likes": snippet.get("likeCount", 0),
+                        "published_at": snippet.get("publishedAt", ""),
+                    })
 
-                if min_likes > 0 and like_count < min_likes:
-                    continue
-                if text_filter and text_filter not in text:
-                    continue
-
-                comments.append({
-                    "author": snippet.get("authorDisplayName", ""),
-                    "text": text,
-                    "likes": like_count,
-                    "published_at": snippet.get("publishedAt", ""),
-                })
+                # --- 返信 ---
+                if include_replies:
+                    replies = item.get("replies", {}).get("comments", [])
+                    for reply in replies:
+                        rsnip = reply.get("snippet", {})
+                        if _passes_filters(rsnip):
+                            results.append({
+                                "comment_id": reply.get("id", ""),
+                                "is_reply": True,
+                                "parent_id": top_id,
+                                "author": rsnip.get("authorDisplayName", ""),
+                                "text": rsnip.get("textOriginal", ""),
+                                "likes": rsnip.get("likeCount", 0),
+                                "published_at": rsnip.get("publishedAt", ""),
+                            })
 
             next_page = resp.get("nextPageToken")
             if not next_page:
                 break
 
-        return comments
+        return results
 
 
 # ------------------------------------------------------------------

@@ -48,16 +48,27 @@ COL_IDS = ["url", "title", "date", "author", "comment", "likes", "comment_date"]
 COL_WIDTHS_GUI = [220, 260, 100, 130, 340, 110, 140]
 COL_WIDTHS_EXCEL = [45, 50, 14, 22, 70, 14, 20]
 
-# カラーパレット
-C_BG = "#f5f7fa"
-C_PANEL = "#ffffff"
-C_ACCENT = "#d32f2f"    # YouTube風の赤
-C_ACCENT_DK = "#b71c1c"
-C_TEXT = "#212121"
-C_MUTED = "#757575"
-C_BORDER = "#e0e0e0"
-C_OK = "#2e7d32"
-C_WARN = "#ef6c00"
+# --------------------------------------------------------------------
+# Windows 11 Fluent インスパイアのカラーパレット
+# --------------------------------------------------------------------
+C_BG        = "#f3f3f3"   # Mica風の背景
+C_PANEL     = "#ffffff"   # カード/サーフェス
+C_PANEL_ALT = "#fafafa"   # セカンダリサーフェス
+C_ACCENT    = "#0067c0"   # Windows 11 デフォルトアクセント (Blue)
+C_ACCENT_DK = "#005a9e"   # ホバー時
+C_ACCENT_LT = "#deecf9"   # 淡いアクセント (選択背景)
+C_DANGER    = "#c42b1c"   # 警告/削除 (赤)
+C_DANGER_DK = "#8b1f14"
+C_TEXT      = "#1b1b1b"   # 主文字色
+C_TEXT_SEC  = "#424242"   # 副文字色
+C_MUTED     = "#757575"   # 淡い文字色
+C_BORDER    = "#e5e5e5"   # 境界線
+C_BORDER_DK = "#d1d1d1"   # 濃い境界線
+C_OK        = "#107c10"   # 成功
+C_WARN      = "#ca5010"   # 警告
+
+# 互換のため旧名も残す
+C_ACCENT_RED = "#d32f2f"
 
 API_KEY_GUIDE_URL = "https://console.cloud.google.com/apis/credentials"
 API_LIBRARY_URL = "https://console.cloud.google.com/apis/library/youtube.googleapis.com"
@@ -271,55 +282,149 @@ class YouTubeCommentExtractorApp:
         except tk.TclError:
             pass
 
-        base_font = ("Yu Gothic UI", 10) if sys.platform == "win32" else ("", 10)
-        heading_font = ("Yu Gothic UI", 10, "bold") if sys.platform == "win32" else ("", 10, "bold")
+        # Windows 11 標準フォント: "Segoe UI Variable" (9.75/11.25/13pt)
+        # 日本語環境では "Yu Gothic UI" を使用
+        if sys.platform == "win32":
+            base_font    = ("Yu Gothic UI", 10)
+            body_font    = ("Yu Gothic UI", 10)
+            heading_font = ("Yu Gothic UI", 10, "bold")
+            title_font   = ("Yu Gothic UI Semibold", 18)
+            subtitle_font = ("Yu Gothic UI", 10)
+            label_font   = ("Yu Gothic UI", 10)
+            section_font = ("Yu Gothic UI Semibold", 11)
+        else:
+            base_font = body_font = ("", 10)
+            heading_font = ("", 10, "bold")
+            title_font = ("", 18, "bold")
+            subtitle_font = ("", 10)
+            label_font = ("", 10)
+            section_font = ("", 11, "bold")
 
+        # ---- 基本 ----
         style.configure("TFrame", background=C_BG)
         style.configure("Panel.TFrame", background=C_PANEL)
-        style.configure("TLabel", background=C_BG, foreground=C_TEXT, font=base_font)
-        style.configure("Panel.TLabel", background=C_PANEL, foreground=C_TEXT, font=base_font)
-        style.configure("Header.TLabel", background=C_PANEL, foreground=C_ACCENT_DK,
-                        font=("Yu Gothic UI", 16, "bold") if sys.platform == "win32" else ("", 16, "bold"))
-        style.configure("Sub.TLabel", background=C_PANEL, foreground=C_MUTED, font=base_font)
+        style.configure("PanelAlt.TFrame", background=C_PANEL_ALT)
+        style.configure("Card.TFrame", background=C_PANEL, relief="flat", borderwidth=0)
+
+        style.configure("TLabel", background=C_BG, foreground=C_TEXT, font=body_font)
+        style.configure("Panel.TLabel", background=C_PANEL, foreground=C_TEXT, font=body_font)
+        style.configure("PanelAlt.TLabel", background=C_PANEL_ALT, foreground=C_TEXT, font=body_font)
+        style.configure("Header.TLabel", background=C_PANEL, foreground=C_TEXT,
+                        font=title_font)
+        style.configure("Sub.TLabel", background=C_PANEL, foreground=C_MUTED,
+                        font=subtitle_font)
         style.configure("FieldLabel.TLabel", background=C_PANEL, foreground=C_TEXT,
-                        font=("Yu Gothic UI", 9, "bold") if sys.platform == "win32" else ("", 9, "bold"))
-        style.configure("Status.TLabel", background=C_BG, foreground=C_TEXT, font=base_font)
-        style.configure("StatusOK.TLabel", background=C_BG, foreground=C_OK, font=base_font)
-        style.configure("StatusWarn.TLabel", background=C_BG, foreground=C_WARN, font=base_font)
+                        font=section_font)
+        style.configure("SectionNum.TLabel", background=C_PANEL, foreground=C_ACCENT,
+                        font=section_font)
+        style.configure("Status.TLabel", background=C_BG, foreground=C_TEXT_SEC,
+                        font=body_font)
+        style.configure("StatusOK.TLabel", background=C_BG, foreground=C_OK, font=body_font)
+        style.configure("StatusWarn.TLabel", background=C_BG, foreground=C_WARN, font=body_font)
+        style.configure("Danger.TLabel", background=C_PANEL, foreground=C_DANGER,
+                        font=body_font)
 
-        style.configure("TLabelframe", background=C_BG, borderwidth=1, relief="solid")
-        style.configure("TLabelframe.Label", background=C_BG, foreground=C_TEXT, font=heading_font)
+        # ---- フレーム/ラベルフレーム ----
+        style.configure("TLabelframe", background=C_BG, borderwidth=1, relief="solid",
+                        bordercolor=C_BORDER)
+        style.configure("TLabelframe.Label", background=C_BG, foreground=C_TEXT,
+                        font=section_font)
 
-        style.configure("TEntry", fieldbackground="white", padding=4)
+        # ---- 入力 ----
+        style.configure("TEntry", fieldbackground="white", padding=6,
+                        bordercolor=C_BORDER_DK, lightcolor=C_BORDER_DK,
+                        darkcolor=C_BORDER_DK)
+        style.map("TEntry",
+                  bordercolor=[("focus", C_ACCENT)],
+                  lightcolor=[("focus", C_ACCENT)],
+                  darkcolor=[("focus", C_ACCENT)])
+        # エラー状態 (検証失敗時)
+        style.configure("Error.TEntry", fieldbackground="#fff4f4",
+                        bordercolor=C_DANGER, lightcolor=C_DANGER,
+                        darkcolor=C_DANGER, padding=6)
 
-        style.configure("TButton", font=base_font, padding=5)
+        # ---- ボタン階層 ----
+        # TButton = 通常 (二次)
+        style.configure("TButton", font=base_font, padding=(12, 6),
+                        background=C_PANEL_ALT, foreground=C_TEXT,
+                        bordercolor=C_BORDER_DK, borderwidth=1, relief="flat")
+        style.map("TButton",
+                  background=[("active", C_BORDER), ("disabled", C_PANEL_ALT)],
+                  foreground=[("disabled", C_MUTED)])
+
+        # Primary (最重要アクション = 稼働)
+        style.configure("Primary.TButton", font=("Yu Gothic UI Semibold", 11) if sys.platform == "win32" else ("", 11, "bold"),
+                        padding=(18, 8), foreground="white",
+                        background=C_ACCENT, borderwidth=0, relief="flat")
+        style.map("Primary.TButton",
+                  background=[("active", C_ACCENT_DK), ("disabled", "#bfd7ea")],
+                  foreground=[("disabled", "white")])
+        # 互換用
         style.configure("Run.TButton",
-                        font=("Yu Gothic UI", 11, "bold") if sys.platform == "win32" else ("", 11, "bold"),
-                        padding=8, foreground="white")
+                        font=("Yu Gothic UI Semibold", 11) if sys.platform == "win32" else ("", 11, "bold"),
+                        padding=(18, 8), foreground="white",
+                        background=C_ACCENT, borderwidth=0, relief="flat")
         style.map("Run.TButton",
                   background=[("active", C_ACCENT_DK), ("!disabled", C_ACCENT)],
-                  foreground=[("!disabled", "white"), ("disabled", "#e0e0e0")])
-        style.configure("Stop.TButton", font=base_font, padding=6)
-        style.configure("Link.TButton", font=base_font, padding=4, foreground=C_ACCENT_DK)
+                  foreground=[("!disabled", "white"), ("disabled", "white")])
 
+        # Secondary (副次的)
+        style.configure("Secondary.TButton", font=base_font, padding=(12, 6),
+                        background=C_PANEL, foreground=C_TEXT,
+                        bordercolor=C_BORDER_DK, borderwidth=1)
+
+        # Danger (停止/削除)
+        style.configure("Stop.TButton", font=base_font, padding=(12, 6),
+                        background=C_PANEL_ALT, foreground=C_DANGER,
+                        bordercolor=C_BORDER_DK, borderwidth=1)
+        style.map("Stop.TButton",
+                  background=[("active", "#fce9e9"), ("disabled", C_PANEL_ALT)],
+                  foreground=[("disabled", C_MUTED)])
+
+        # Link (テキストリンク風)
+        style.configure("Link.TButton", font=base_font, padding=(6, 4),
+                        foreground=C_ACCENT, background=C_PANEL,
+                        borderwidth=0, relief="flat")
+        style.map("Link.TButton",
+                  foreground=[("active", C_ACCENT_DK)],
+                  background=[("active", C_ACCENT_LT)])
+
+        # ---- ラジオ/チェック ----
         style.configure("Panel.TRadiobutton", background=C_PANEL,
-                        foreground=C_TEXT, font=base_font)
+                        foreground=C_TEXT, font=body_font)
         style.map("Panel.TRadiobutton",
                   background=[("active", C_PANEL)])
+        style.configure("Panel.TCheckbutton", background=C_PANEL,
+                        foreground=C_TEXT, font=body_font)
+        style.map("Panel.TCheckbutton",
+                  background=[("active", C_PANEL)])
 
+        # ---- Treeview (結果テーブル) ----
         style.configure("Results.Treeview",
-                        rowheight=28, font=base_font, fieldbackground="white",
-                        background="white", foreground=C_TEXT)
+                        rowheight=30, font=body_font, fieldbackground="white",
+                        background="white", foreground=C_TEXT,
+                        borderwidth=0, relief="flat")
         style.configure("Results.Treeview.Heading",
-                        font=heading_font, background="#eceff1", foreground=C_TEXT,
-                        padding=4)
+                        font=heading_font, background="#f5f5f5",
+                        foreground=C_TEXT_SEC, padding=(6, 8),
+                        borderwidth=0, relief="flat")
         style.map("Results.Treeview",
-                  background=[("selected", "#bbdefb")],
+                  background=[("selected", C_ACCENT_LT)],
                   foreground=[("selected", C_TEXT)])
+        style.map("Results.Treeview.Heading",
+                  background=[("active", "#eeeeee")])
 
+        # ---- プログレスバー ----
         style.configure("Horizontal.TProgressbar",
-                        troughcolor="#e0e0e0", background=C_ACCENT,
-                        thickness=18)
+                        troughcolor="#e8e8e8", background=C_ACCENT,
+                        thickness=6, borderwidth=0)
+
+        # ---- コンボボックス ----
+        style.configure("TCombobox", padding=5, fieldbackground="white")
+        style.map("TCombobox",
+                  fieldbackground=[("readonly", "white")],
+                  selectbackground=[("readonly", C_ACCENT_LT)],
+                  selectforeground=[("readonly", C_TEXT)])
 
     # ------------------------------------------------------------------
     # Menu bar
