@@ -1,5 +1,8 @@
 # API key config file (DO NOT COMMIT)
 config.json
+# 履歴ファイル (ローカルのみ)
+history.json
+api_keys.json
 
 # Python
 __pycache__/

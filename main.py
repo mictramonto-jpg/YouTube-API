@@ -250,7 +250,8 @@ class YouTubeCommentExtractorApp:
         self.root.bind("<F1>", lambda e: self.show_api_guide())
         self.root.bind("<F5>", lambda e: self.start_extraction())
         self.root.bind("<Escape>", lambda e: self.stop_extraction())
-        self.root.bind("<Control-s>", lambda e: self.save_to_excel())
+        self.root.bind("<Control-s>", lambda e: self.save_results())
+        self.root.bind("<Control-h>", lambda e: self.show_history())
 
         # ウィンドウを閉じる際の処理
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -442,8 +443,13 @@ class YouTubeCommentExtractorApp:
         menubar = tk.Menu(self.root)
 
         file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="Excelに保存...\tCtrl+S",
-                              command=self.save_to_excel)
+        file_menu.add_command(label="結果を保存...\tCtrl+S",
+                              command=self.save_results)
+        file_menu.add_separator()
+        file_menu.add_command(label="📜 抽出履歴を開く\tCtrl+H",
+                              command=self.show_history)
+        file_menu.add_command(label="🔑 APIキー管理 (ローテーション)",
+                              command=self.show_api_keys_manager)
         file_menu.add_separator()
         file_menu.add_command(label="終了", command=self._on_close)
         menubar.add_cascade(label="ファイル", menu=file_menu)
@@ -1467,6 +1473,210 @@ class YouTubeCommentExtractorApp:
         )
 
     # ------------------------------------------------------------------
+    # 履歴機能 (過去の抽出ログ)
+    # ------------------------------------------------------------------
+
+    HISTORY_PATH = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else ".",
+        "history.json",
+    )
+    MAX_HISTORY = 50
+
+    def _load_history(self) -> list:
+        """履歴ファイルを読み込み、リストとして返す。"""
+        path = self.HISTORY_PATH
+        if not os.path.exists(path):
+            return []
+        try:
+            import json
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+
+    def _save_history_entry(self, entry: dict):
+        """履歴にエントリを追加して保存 (最新順、最大MAX_HISTORY件)。"""
+        try:
+            import json
+            history = self._load_history()
+            history.insert(0, entry)
+            history = history[:self.MAX_HISTORY]
+            with open(self.HISTORY_PATH, "w", encoding="utf-8") as f:
+                json.dump(history, f, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            # 履歴保存失敗は処理を止めない
+            print(f"[warn] 履歴の保存に失敗: {exc}")
+
+    def show_history(self):
+        """履歴ダイアログを表示。"""
+        history = self._load_history()
+        dlg = tk.Toplevel(self.root)
+        dlg.title("抽出履歴")
+        dlg.geometry("900x500")
+        dlg.transient(self.root)
+
+        ttk.Label(dlg, text="📜 過去の抽出履歴 (最大50件)",
+                  font=("Yu Gothic UI Semibold", 12) if sys.platform == "win32" else ("", 12, "bold"),
+                  ).pack(anchor="w", padx=12, pady=(10, 6))
+
+        if not history:
+            ttk.Label(dlg, text="履歴がまだありません。\n稼働すると自動的に記録されます。",
+                      foreground=C_MUTED).pack(pady=30)
+            ttk.Button(dlg, text="閉じる", command=dlg.destroy).pack(pady=6)
+            return
+
+        # Treeviewで履歴リスト
+        cols = ("date", "mode", "urls", "comments", "quota")
+        tv = ttk.Treeview(dlg, columns=cols, show="headings",
+                          style="Results.Treeview", height=14)
+        tv.heading("date", text="日時")
+        tv.heading("mode", text="モード")
+        tv.heading("urls", text="URL / 設定")
+        tv.heading("comments", text="コメント数")
+        tv.heading("quota", text="消費API")
+        tv.column("date", width=140, anchor="w")
+        tv.column("mode", width=80, anchor="center")
+        tv.column("urls", width=420, anchor="w")
+        tv.column("comments", width=80, anchor="center")
+        tv.column("quota", width=80, anchor="center")
+
+        for i, h in enumerate(history):
+            urls = h.get("urls", [])
+            url_str = urls[0] if urls else ""
+            if len(urls) > 1:
+                url_str += f"  (他{len(urls)-1}件)"
+            filters = []
+            if h.get("min_likes", 0):
+                filters.append(f"♥≥{h['min_likes']}")
+            if h.get("text_filter"):
+                filters.append(f"'{h['text_filter']}'")
+            if h.get("date_from") or h.get("date_to"):
+                filters.append("日付範囲")
+            summary = url_str
+            if filters:
+                summary += "  [" + ", ".join(filters) + "]"
+
+            mode_label = "動画のみ" if h.get("mode") == "video" else "チャンネル"
+            tv.insert("", tk.END, iid=str(i), values=(
+                h.get("timestamp", ""),
+                mode_label,
+                summary,
+                f"{h.get('comment_count', 0):,}",
+                f"{h.get('quota', 0):,}",
+            ))
+
+        sb = ttk.Scrollbar(dlg, orient=tk.VERTICAL, command=tv.yview)
+        tv.configure(yscrollcommand=sb.set)
+        tv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(12, 0), pady=(0, 10))
+        sb.pack(side=tk.LEFT, fill=tk.Y, pady=(0, 10))
+
+        # ボタンエリア
+        btnf = ttk.Frame(dlg)
+        btnf.pack(side=tk.RIGHT, fill=tk.Y, padx=12, pady=(0, 10))
+
+        def _reload_selected():
+            sel = tv.selection()
+            if not sel:
+                return
+            idx = int(sel[0])
+            h = history[idx]
+            # 条件を入力欄に復元
+            self._clear_all_urls()
+            for url in h.get("urls", []):
+                if self.url_entries and not self.url_entries[0].get_value().strip():
+                    self.url_entries[0].set_value(url)
+                else:
+                    self._add_url_row(url)
+            self.extract_mode_var.set(h.get("mode", "video"))
+            self._on_mode_changed()
+            self.max_videos_var.set(str(h.get("max_videos", 30)))
+            self.min_likes_var.set(str(h.get("min_likes", 0)))
+            self.text_filter_entry.set_value(h.get("text_filter", ""))
+            self.text_filter_mode_var.set(h.get("text_filter_mode", "AND"))
+            self.author_filter_entry.set_value(h.get("author_filter", ""))
+            self.include_replies_var.set(h.get("include_replies", False))
+            self.dedup_var.set(h.get("dedup", True))
+            # 並び順
+            order_val = h.get("order", "date")
+            self.order_var.set(order_val)
+            label = self._order_value_to_label.get(order_val, "新しい順")
+            self.order_display_var.set(label)
+            # 日付
+            if h.get("date_from"):
+                self.date_from_entry.set_value(h["date_from"][:10])
+            if h.get("date_to"):
+                self.date_to_entry.set_value(h["date_to"][:10])
+            dlg.destroy()
+            messagebox.showinfo(
+                "条件を復元しました",
+                "履歴から抽出条件を復元しました。\n"
+                "APIキーとご確認の上、「▶ 稼働」をクリックしてください。"
+            )
+
+        def _open_file():
+            sel = tv.selection()
+            if not sel:
+                return
+            h = history[int(sel[0])]
+            fp = h.get("export_path", "")
+            if fp and os.path.exists(fp):
+                try:
+                    if sys.platform == "win32":
+                        os.startfile(fp)
+                    elif sys.platform == "darwin":
+                        os.system(f'open "{fp}"')
+                    else:
+                        os.system(f'xdg-open "{fp}"')
+                except Exception as e:
+                    messagebox.showerror("エラー", f"ファイルを開けません: {e}")
+            else:
+                messagebox.showinfo(
+                    "情報",
+                    "保存ファイルが見つかりません。\n"
+                    "削除されたか、別の場所に移動された可能性があります。"
+                )
+
+        def _delete_selected():
+            sel = tv.selection()
+            if not sel:
+                return
+            if not messagebox.askyesno("確認", "選択した履歴を削除しますか?"):
+                return
+            idx = int(sel[0])
+            history.pop(idx)
+            try:
+                import json
+                with open(self.HISTORY_PATH, "w", encoding="utf-8") as f:
+                    json.dump(history, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                messagebox.showerror("エラー", f"削除に失敗しました: {e}")
+            tv.delete(sel[0])
+
+        def _clear_all():
+            if not messagebox.askyesno("確認", "全ての履歴を削除しますか? この操作は元に戻せません。"):
+                return
+            try:
+                if os.path.exists(self.HISTORY_PATH):
+                    os.remove(self.HISTORY_PATH)
+                dlg.destroy()
+                messagebox.showinfo("完了", "履歴を全て削除しました。")
+            except Exception as e:
+                messagebox.showerror("エラー", f"削除に失敗しました: {e}")
+
+        ttk.Button(btnf, text="🔄 この条件で再実行",
+                   style="Primary.TButton",
+                   command=_reload_selected).pack(fill=tk.X, pady=(0, 6))
+        ttk.Button(btnf, text="📂 保存ファイルを開く",
+                   command=_open_file).pack(fill=tk.X, pady=3)
+        ttk.Button(btnf, text="🗑 この履歴を削除",
+                   command=_delete_selected).pack(fill=tk.X, pady=3)
+        ttk.Button(btnf, text="全て削除",
+                   command=_clear_all).pack(fill=tk.X, pady=(12, 3))
+        ttk.Button(btnf, text="閉じる",
+                   command=dlg.destroy).pack(fill=tk.X, pady=(12, 0))
+
+    # ------------------------------------------------------------------
     # プレビューパネル (動画サムネイル + メタ情報)
     # ------------------------------------------------------------------
 
@@ -1805,6 +2015,22 @@ class YouTubeCommentExtractorApp:
         self._set_running_state(True)
         self._update_elapsed()
 
+        # 現在実行中の設定を保存 (履歴用)
+        self._current_params = {
+            "urls": urls,
+            "mode": mode,
+            "order": order,
+            "max_videos": max_videos,
+            "min_likes": min_likes,
+            "text_filter": text_filter,
+            "text_filter_mode": text_filter_mode,
+            "author_filter": author_filter,
+            "include_replies": include_replies,
+            "dedup": dedup,
+            "date_from": date_from,
+            "date_to": date_to,
+        }
+
         self.worker_thread = threading.Thread(
             target=self._worker,
             kwargs={
@@ -1842,9 +2068,25 @@ class YouTubeCommentExtractorApp:
                 date_from=None, date_to=None,
                 mode="video", order="date"):
         put = self.msg_queue.put
+
+        # --- APIキーローテーション準備 ---
+        # メインのapi_keyが先頭、次にapi_keys.jsonの残りキーを続ける
+        saved_keys = [k.get("key") for k in self._load_api_keys() if k.get("key")]
+        key_pool = [api_key] + [k for k in saved_keys if k and k != api_key]
+        key_labels = {api_key: "(入力欄のキー)"}
+        for saved in self._load_api_keys():
+            if saved.get("key"):
+                key_labels.setdefault(saved["key"],
+                                       saved.get("label", "(ラベルなし)"))
+
+        # 現在使用中のキーのインデックス
+        self._active_key_idx = 0
+        client = self._init_client_with_rotation(key_pool, key_labels, put)
+        if client is None:
+            put({"type": "done", "error": "利用可能なAPIキーがありません。"})
+            return
+
         try:
-            put({"type": "status", "text": "API接続中..."})
-            client = YouTubeClient(api_key)
 
             put({"type": "status", "text": "APIキーを検証中..."})
             client.validate_api_key()
@@ -1996,7 +2238,27 @@ class YouTubeCommentExtractorApp:
             put({"type": "done", "error": None})
 
         except APIError as exc:
-            # エラー時でもそこまでの消費量は保持
+            # クォータ枯渇 (403) の場合はキー切替を試みる
+            if exc.status == 403 and len(key_pool) > 1:
+                self._consumed_quota = getattr(client, "quota_used", 0)
+                new_client = self._try_rotate_key(client, key_pool, key_labels, put)
+                if new_client is not None:
+                    # キー切替成功 → 再度実行を試みる
+                    put({
+                        "type": "status",
+                        "text": f"キー切替成功。処理を再開します..."
+                    })
+                    # 簡易再実行: 再帰的にワーカーを呼び出す
+                    return self._worker(
+                        api_key=key_pool[self._active_key_idx],
+                        urls=urls, max_videos=max_videos,
+                        min_likes=min_likes, text_filter=text_filter,
+                        text_filter_mode=text_filter_mode,
+                        author_filter=author_filter,
+                        include_replies=include_replies, dedup=dedup,
+                        date_from=date_from, date_to=date_to,
+                        mode=mode, order=order,
+                    )
             try:
                 self._consumed_quota = client.quota_used
             except (NameError, AttributeError):
@@ -2062,16 +2324,32 @@ class YouTubeCommentExtractorApp:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         name = f"youtube_comments_{ts}.xlsx"
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+        saved = False
         try:
             self._write_excel(path)
             cur = self.status_var.get()
             self.status_var.set(f"{cur}  |  自動保存: {name}")
+            saved = True
         except Exception as exc:
             messagebox.showwarning(
                 "自動保存エラー",
                 f"Excelファイルの自動保存に失敗しました:\n{exc}\n\n"
-                "「💾 Excelに名前を付けて保存」から手動で保存してください。"
+                "「💾 保存...」から手動で保存してください。"
             )
+
+        # 履歴に記録
+        try:
+            params = getattr(self, "_current_params", {}).copy()
+            entry = {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                **params,
+                "comment_count": len(self.results),
+                "quota": getattr(self, "_consumed_quota", 0),
+                "export_path": path if saved else "",
+            }
+            self._save_history_entry(entry)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Excel export
@@ -2261,6 +2539,190 @@ class YouTubeCommentExtractorApp:
     # ------------------------------------------------------------------
     # Dialogs
     # ------------------------------------------------------------------
+
+    def _init_client_with_rotation(self, key_pool, key_labels, put):
+        """
+        キーのプールから順番に試して、最初に動作するYouTubeClientを返す。
+        全キーで失敗した場合は None。
+        """
+        for idx, k in enumerate(key_pool):
+            if not k:
+                continue
+            try:
+                client = YouTubeClient(k)
+                # 検証コールを後でまとめて行うため、ここではインスタンス化のみ
+                self._active_key_idx = idx
+                self._active_key_label = key_labels.get(k, "(ラベルなし)")
+                put({
+                    "type": "status",
+                    "text": f"API接続中... キー: {self._active_key_label}"
+                })
+                return client
+            except Exception as exc:
+                put({
+                    "type": "status",
+                    "text": f"キー #{idx + 1} の初期化失敗: {exc}"
+                })
+                continue
+        return None
+
+    def _try_rotate_key(self, current_client, key_pool, key_labels, put):
+        """
+        現在のキーが使えなくなった時、次のキーを試す。
+        成功したら新しいYouTubeClient、失敗したらNone。
+        """
+        start_idx = self._active_key_idx + 1
+        for idx in range(start_idx, len(key_pool)):
+            k = key_pool[idx]
+            if not k:
+                continue
+            try:
+                new_client = YouTubeClient(k)
+                self._active_key_idx = idx
+                self._active_key_label = key_labels.get(k, "(ラベルなし)")
+                put({
+                    "type": "status",
+                    "text": (f"🔁 次のAPIキーに切替: {self._active_key_label}")
+                })
+                return new_client
+            except Exception:
+                continue
+        return None
+
+    # ------------------------------------------------------------------
+    # APIキー管理 (複数キーのローテーション対応)
+    # ------------------------------------------------------------------
+
+    API_KEYS_PATH = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else ".",
+        "api_keys.json",
+    )
+
+    def _load_api_keys(self) -> list:
+        """api_keys.json から保存済みキーを読み込む。"""
+        if not os.path.exists(self.API_KEYS_PATH):
+            return []
+        try:
+            import json
+            with open(self.API_KEYS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+
+    def _save_api_keys(self, keys: list):
+        """api_keys.json にキーリストを保存。"""
+        try:
+            import json
+            with open(self.API_KEYS_PATH, "w", encoding="utf-8") as f:
+                json.dump(keys, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as exc:
+            messagebox.showerror("保存エラー", f"APIキーリストの保存に失敗: {exc}")
+            return False
+
+    def show_api_keys_manager(self):
+        """APIキー管理ダイアログを表示。"""
+        keys = self._load_api_keys()
+        dlg = tk.Toplevel(self.root)
+        dlg.title("APIキー管理 (ローテーション)")
+        dlg.geometry("720x460")
+        dlg.transient(self.root)
+
+        ttk.Label(
+            dlg,
+            text="🔑 APIキー管理",
+            font=("Yu Gothic UI Semibold", 13) if sys.platform == "win32" else ("", 13, "bold"),
+        ).pack(anchor="w", padx=14, pady=(12, 4))
+
+        ttk.Label(
+            dlg,
+            text=("複数のYouTube Data APIキーを登録すると、1つがクォータ制限に達した時に自動で次のキーに切り替えます。\n"
+                  "※ 複数のGoogleアカウントで取得したキーを利用してください (同じアカウントの複数キーは同じクォータ枠を共有します)。"),
+            foreground=C_TEXT_SEC, wraplength=680,
+        ).pack(anchor="w", padx=14, pady=(0, 10))
+
+        # キーリスト
+        lf = ttk.LabelFrame(dlg, text="登録済みキー", padding=10)
+        lf.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 10))
+
+        tv = ttk.Treeview(lf, columns=("label", "key"), show="headings",
+                          style="Results.Treeview", height=8)
+        tv.heading("label", text="ラベル")
+        tv.heading("key", text="APIキー (マスク表示)")
+        tv.column("label", width=160)
+        tv.column("key", width=440)
+
+        def _refresh():
+            tv.delete(*tv.get_children())
+            for i, k in enumerate(keys):
+                masked = k["key"][:8] + "…" + k["key"][-4:] if len(k["key"]) > 12 else "…"
+                tv.insert("", tk.END, iid=str(i),
+                          values=(k.get("label", "(ラベルなし)"), masked))
+
+        _refresh()
+        tv.pack(fill=tk.BOTH, expand=True)
+
+        # 入力エリア
+        input_frame = ttk.Frame(dlg)
+        input_frame.pack(fill=tk.X, padx=14, pady=(0, 10))
+
+        ttk.Label(input_frame, text="ラベル:").pack(side=tk.LEFT)
+        label_var = tk.StringVar()
+        ttk.Entry(input_frame, textvariable=label_var, width=14).pack(
+            side=tk.LEFT, padx=(4, 10))
+        ttk.Label(input_frame, text="APIキー:").pack(side=tk.LEFT)
+        key_var = tk.StringVar()
+        ttk.Entry(input_frame, textvariable=key_var, width=44, show="●").pack(
+            side=tk.LEFT, padx=(4, 10), fill=tk.X, expand=True)
+
+        def _add_key():
+            k = key_var.get().strip()
+            lbl = label_var.get().strip() or f"Key {len(keys) + 1}"
+            if not k:
+                messagebox.showwarning("入力エラー", "APIキーを入力してください。")
+                return
+            keys.append({"label": lbl, "key": k})
+            if self._save_api_keys(keys):
+                _refresh()
+                label_var.set("")
+                key_var.set("")
+
+        def _delete():
+            sel = tv.selection()
+            if not sel:
+                return
+            idx = int(sel[0])
+            if messagebox.askyesno("確認", f"キー「{keys[idx].get('label')}」を削除しますか?"):
+                keys.pop(idx)
+                if self._save_api_keys(keys):
+                    _refresh()
+
+        def _use_selected():
+            sel = tv.selection()
+            if not sel:
+                messagebox.showwarning("情報", "使用するキーを選択してください。")
+                return
+            idx = int(sel[0])
+            self.api_key_var.set(keys[idx]["key"])
+            dlg.destroy()
+            messagebox.showinfo(
+                "適用しました",
+                f"キー「{keys[idx].get('label')}」をメイン画面にセットしました。"
+            )
+
+        ttk.Button(input_frame, text="＋ 追加", style="Primary.TButton",
+                   command=_add_key).pack(side=tk.LEFT)
+
+        btn_frame = ttk.Frame(dlg)
+        btn_frame.pack(fill=tk.X, padx=14, pady=(0, 14))
+        ttk.Button(btn_frame, text="✓ 選択したキーを使用",
+                   style="Primary.TButton",
+                   command=_use_selected).pack(side=tk.LEFT)
+        ttk.Button(btn_frame, text="🗑 選択したキーを削除",
+                   command=_delete).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(btn_frame, text="閉じる",
+                   command=dlg.destroy).pack(side=tk.RIGHT)
 
     def show_api_guide(self):
         win = tk.Toplevel(self.root)
