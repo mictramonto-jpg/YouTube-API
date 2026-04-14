@@ -647,16 +647,24 @@ class YouTubeCommentExtractorApp:
         self.quota_result_label.pack(side=tk.LEFT, padx=(24, 0))
         Tooltip(self.quota_result_label,
                 "直前の稼働で実際に消費したYouTube APIクォータ量 (実測値)。\n\n"
-                "・1日の無料枠: 10,000 units\n"
-                "・太平洋時間 0:00 (日本時間 17:00) にリセット\n\n"
                 "※このアプリが把握できるのは「このアプリでの消費」のみ。\n"
-                "  他のツールと併用している場合の実残量は\n"
-                "  Google Cloud Console でご確認ください。")
+                "  実残量は Google Cloud Console でご確認ください。")
 
-        self.export_btn = ttk.Button(bar, text="💾 Excelに名前を付けて保存",
-                                      command=self.save_to_excel, state=tk.DISABLED)
+        # 保存ボタン (メイン) - Excel形式
+        self.export_btn = ttk.Button(bar, text="💾 保存...",
+                                      style="Run.TButton",
+                                      command=self.save_results, state=tk.DISABLED)
         self.export_btn.pack(side=tk.RIGHT)
-        Tooltip(self.export_btn, "現在の結果を任意の場所にExcelファイルとして保存します (Ctrl+S)")
+        Tooltip(self.export_btn,
+                "現在の結果を任意の場所に保存します (Ctrl+S)\n"
+                "対応形式: Excel (.xlsx) / CSV (.csv) / TSV (.tsv) / JSON (.json)")
+
+        # CSV保存ボタン (サブ) - 素早いCSV保存
+        self.export_csv_btn = ttk.Button(bar, text="📄 CSV保存",
+                                          command=self.save_to_csv, state=tk.DISABLED)
+        self.export_csv_btn.pack(side=tk.RIGHT, padx=(0, 6))
+        Tooltip(self.export_csv_btn,
+                "結果をCSVファイルとして素早く保存します (UTF-8 BOM付き / Excel対応)")
 
         clear_btn = ttk.Button(bar, text="🗑 クリア", command=self._clear_results)
         clear_btn.pack(side=tk.RIGHT, padx=(0, 6))
@@ -834,6 +842,9 @@ class YouTubeCommentExtractorApp:
         self.results.clear()
         self.count_label.config(text="  件数: 0")
         self.export_btn.config(state=tk.DISABLED)
+        if hasattr(self, "export_csv_btn"):
+            self.export_csv_btn.config(state=tk.DISABLED)
+        self.quota_result_var.set("")
         self.progress_var.set(0)
         self.status_var.set("準備完了")
 
@@ -1115,11 +1126,15 @@ class YouTubeCommentExtractorApp:
             self.run_button.config(state=tk.DISABLED)
             self.stop_button.config(state=tk.NORMAL)
             self.export_btn.config(state=tk.DISABLED)
+            if hasattr(self, "export_csv_btn"):
+                self.export_csv_btn.config(state=tk.DISABLED)
         else:
             self.run_button.config(state=tk.NORMAL)
             self.stop_button.config(state=tk.DISABLED)
             if self.results:
                 self.export_btn.config(state=tk.NORMAL)
+                if hasattr(self, "export_csv_btn"):
+                    self.export_csv_btn.config(state=tk.NORMAL)
 
     def _add_row_to_tree(self, row: tuple):
         """Treeviewへの行追加 (ゼブラストライプ付き、コメントは改行除去)。"""
@@ -1426,7 +1441,7 @@ class YouTubeCommentExtractorApp:
         # 結果エリアの消費クォータ表示を更新
         if hasattr(self, "quota_result_var"):
             if consumed:
-                self.quota_result_var.set(f"📊 消費API: {consumed:,} units / 無料枠 10,000")
+                self.quota_result_var.set(f"📊 消費API: {consumed:,} units")
             else:
                 self.quota_result_var.set("")
 
@@ -1470,25 +1485,107 @@ class YouTubeCommentExtractorApp:
     # Excel export
     # ------------------------------------------------------------------
 
-    def save_to_excel(self):
+    def save_results(self):
+        """
+        保存先を選択し、拡張子に応じて Excel / CSV / TSV / JSON を出力。
+        """
         if not self.results:
-            messagebox.showinfo("情報", "保存するデータがありません。\n先に「稼働」でデータを取得してください。")
+            messagebox.showinfo(
+                "情報",
+                "保存するデータがありません。\n先に「稼働」でデータを取得してください。"
+            )
             return
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         default = f"youtube_comments_{ts}.xlsx"
         path = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
-            filetypes=[("Excel ファイル", "*.xlsx")],
+            filetypes=[
+                ("Excel ファイル", "*.xlsx"),
+                ("CSV (UTF-8 BOM付き, Excel互換)", "*.csv"),
+                ("TSV (タブ区切り)", "*.tsv"),
+                ("JSON", "*.json"),
+                ("全てのファイル", "*.*"),
+            ],
             initialfile=default,
-            title="Excelファイルの保存先を選択",
+            title="結果の保存先と形式を選択",
+        )
+        if not path:
+            return
+
+        ext = os.path.splitext(path)[1].lower()
+        try:
+            if ext in (".csv",):
+                self._write_csv(path)
+            elif ext in (".tsv",):
+                self._write_csv(path, delimiter="\t")
+            elif ext in (".json",):
+                self._write_json(path)
+            else:
+                # 既定は Excel
+                self._write_excel(path)
+            messagebox.showinfo("保存完了", f"保存しました:\n{path}")
+        except Exception as exc:
+            messagebox.showerror("保存エラー", f"保存に失敗しました:\n{exc}")
+
+    # 後方互換エイリアス
+    save_to_excel = save_results
+
+    def save_to_csv(self):
+        """CSVファイルとして素早く保存。"""
+        if not self.results:
+            messagebox.showinfo(
+                "情報",
+                "保存するデータがありません。\n先に「稼働」でデータを取得してください。"
+            )
+            return
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default = f"youtube_comments_{ts}.csv"
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV (UTF-8 BOM付き, Excel互換)", "*.csv")],
+            initialfile=default,
+            title="CSVファイルの保存先を選択",
         )
         if not path:
             return
         try:
-            self._write_excel(path)
-            messagebox.showinfo("保存完了", f"Excelファイルを保存しました:\n{path}")
+            self._write_csv(path)
+            messagebox.showinfo("保存完了", f"CSVファイルを保存しました:\n{path}")
         except Exception as exc:
             messagebox.showerror("保存エラー", f"保存に失敗しました:\n{exc}")
+
+    def _write_csv(self, filepath: str, delimiter: str = ","):
+        """CSV/TSV として結果を書き出す (UTF-8 BOM付き、Excel互換)。"""
+        import csv
+        # utf-8-sig で BOM付き → Excel で文字化けせず開ける
+        with open(filepath, "w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.writer(f, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
+            writer.writerow(HEADERS)
+            for row in self.results:
+                writer.writerow(row)
+
+    def _write_json(self, filepath: str):
+        """JSON として結果を書き出す (各行を辞書化)。"""
+        import json
+        keys = ["video_url", "video_title", "video_published_at",
+                "author", "comment_text", "comment_likes", "comment_published_at"]
+        payload = {
+            "meta": {
+                "extracted_at": datetime.now().isoformat(timespec="seconds"),
+                "count": len(self.results),
+                "filters": {
+                    "min_likes": self.min_likes_var.get(),
+                    "text_filter": self.text_filter_entry.get_value(),
+                },
+                "urls": self._get_all_urls(),
+                "mode": self.extract_mode_var.get(),
+                "order": self.order_var.get() if hasattr(self, "order_var") else "date",
+                "consumed_quota": getattr(self, "_consumed_quota", 0),
+            },
+            "comments": [dict(zip(keys, row)) for row in self.results],
+        }
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
 
     def _write_excel(self, filepath: str):
         wb = Workbook()
