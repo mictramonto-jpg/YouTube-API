@@ -224,6 +224,9 @@ class YouTubeCommentExtractorApp:
         self._build_results_section()
         self._build_status_bar()
 
+        # 初期モードに合わせてUI (動画数・並び順) の有効/無効を設定
+        self._on_mode_changed()
+
         # キーボードショートカット
         self.root.bind("<F1>", lambda e: self.show_api_guide())
         self.root.bind("<F5>", lambda e: self.start_extraction())
@@ -427,29 +430,59 @@ class YouTubeCommentExtractorApp:
         clear_key_btn.pack(side=tk.LEFT, padx=(4, 0))
         Tooltip(clear_key_btn, "APIキー欄をクリアします")
 
-        # === Row 2: URL ===
+        # === Row 2: URL(s) ===
         r2 = ttk.Frame(inner, style="Panel.TFrame")
         r2.pack(fill=tk.X, pady=(0, 4))
 
-        ttk.Label(r2, text="② YouTube チャンネルURL (または動画URL)",
+        ttk.Label(r2, text="② YouTube URL (チャンネルURL または 動画URL)",
                   style="FieldLabel.TLabel").pack(side=tk.LEFT)
 
-        r2b = ttk.Frame(inner, style="Panel.TFrame")
-        r2b.pack(fill=tk.X, pady=(0, 12))
-        self.url_entry = PlaceholderEntry(
-            r2b, placeholder="例: https://www.youtube.com/@channel/videos",
-            font=("", 10))
-        self.url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        Tooltip(self.url_entry,
-                "対応形式:\n"
-                "・チャンネルURL: https://www.youtube.com/@名前/videos\n"
-                "・ショート一覧: https://www.youtube.com/@名前/shorts\n"
-                "・ライブ一覧: https://www.youtube.com/@名前/streams\n"
-                "・動画URL: https://www.youtube.com/watch?v=xxx")
+        # ヘルプ (複数URL対応の説明)
+        ttk.Label(r2, text="  複数URL対応:「+ URL追加」で枠を追加／CSVで一括読込可",
+                  style="Sub.TLabel").pack(side=tk.LEFT, padx=(8, 0))
 
-        clear_url_btn = ttk.Button(r2b, text="✕", width=3,
-                                    command=lambda: self.url_entry.set_value(""))
-        clear_url_btn.pack(side=tk.LEFT, padx=(4, 0))
+        # URL 入力行を管理するコンテナ
+        self.url_list_frame = ttk.Frame(inner, style="Panel.TFrame")
+        self.url_list_frame.pack(fill=tk.X, pady=(2, 4))
+
+        # 複数URLを保持するリスト (各要素は PlaceholderEntry ウィジェット)
+        self.url_entries = []
+        # 各URL行 Frame を保持 (削除時に参照)
+        self.url_rows = []
+
+        # 最初のURL入力行を追加
+        self._add_url_row()
+
+        # URL 操作ボタン列 (+ URL追加 / CSVから読込 / 全クリア)
+        r2btn = ttk.Frame(inner, style="Panel.TFrame")
+        r2btn.pack(fill=tk.X, pady=(0, 12))
+
+        add_url_btn = ttk.Button(r2btn, text="＋ URL追加",
+                                 style="Link.TButton",
+                                 command=self._add_url_row)
+        add_url_btn.pack(side=tk.LEFT)
+        Tooltip(add_url_btn,
+                "新しいURL入力欄を下に追加します。\n"
+                "複数の動画/チャンネルを一括処理できます。")
+
+        csv_btn = ttk.Button(r2btn, text="📁 CSVから一括読込",
+                             style="Link.TButton",
+                             command=self._load_urls_from_csv)
+        csv_btn.pack(side=tk.LEFT, padx=(8, 0))
+        Tooltip(csv_btn,
+                "CSV/TXTファイルからURLを一括で読み込みます。\n"
+                "・1行に1つのURLを記載した形式\n"
+                "・CSV形式 (URLを任意の列に記載) も対応\n"
+                "・ヘッダ行は自動でスキップ")
+
+        clear_all_btn = ttk.Button(r2btn, text="全クリア",
+                                   style="Link.TButton",
+                                   command=self._clear_all_urls)
+        clear_all_btn.pack(side=tk.LEFT, padx=(8, 0))
+        Tooltip(clear_all_btn, "全てのURL入力欄をクリアします (1行は残します)。")
+
+        # 後方互換: 旧コードの self.url_entry 参照を先頭のエントリに紐付け
+        self.url_entry = self.url_entries[0]
 
         # === Row 2c: Extraction Mode (channel-wide vs single-video) ===
         r2c = ttk.Frame(inner, style="Panel.TFrame")
@@ -458,30 +491,32 @@ class YouTubeCommentExtractorApp:
                                                                     padx=(0, 10))
 
         # "channel" = URL のチャンネル内の複数動画から取得
-        # "video"   = URL で指定した動画のみから取得
-        self.extract_mode_var = tk.StringVar(value="channel")
-
-        rb_channel = ttk.Radiobutton(
-            r2c, text="チャンネル全体 (URLからチャンネルを特定し複数動画を対象)",
-            variable=self.extract_mode_var, value="channel",
-            style="Panel.TRadiobutton",
-            command=self._on_mode_changed,
-        )
-        rb_channel.pack(side=tk.LEFT, padx=(0, 20))
-        Tooltip(rb_channel,
-                "入力URLのチャンネルから「リサーチする動画数」に指定した件数の動画を取得。\n"
-                "チャンネルタブURL/動画URLのどちらでもOK (動画URLの場合はそのチャンネル)")
+        # "video"   = URL で指定した動画のみから取得 (デフォルト)
+        self.extract_mode_var = tk.StringVar(value="video")
 
         rb_video = ttk.Radiobutton(
-            r2c, text="指定した動画のみ (動画URL必須)",
+            r2c, text="指定した動画のみ (動画URL) ※複数URL対応",
             variable=self.extract_mode_var, value="video",
             style="Panel.TRadiobutton",
             command=self._on_mode_changed,
         )
-        rb_video.pack(side=tk.LEFT)
+        rb_video.pack(side=tk.LEFT, padx=(0, 20))
         Tooltip(rb_video,
-                "URLで指定した1本の動画のコメントだけを取得します。\n"
-                "動画URL (/watch?v=...、/shorts/...、/live/...) を入力してください。")
+                "URLで指定した動画のコメントだけを取得します。\n"
+                "動画URL (/watch?v=...、/shorts/...、/live/...) を入力してください。\n"
+                "複数のURLを入力すると、それぞれの動画を順番に処理します。")
+
+        rb_channel = ttk.Radiobutton(
+            r2c, text="チャンネル全体 (URLからチャンネル特定→複数動画)",
+            variable=self.extract_mode_var, value="channel",
+            style="Panel.TRadiobutton",
+            command=self._on_mode_changed,
+        )
+        rb_channel.pack(side=tk.LEFT)
+        Tooltip(rb_channel,
+                "入力URLのチャンネルから「リサーチする動画数」に指定した件数の動画を取得。\n"
+                "チャンネルタブURL/動画URLのどちらでもOK (動画URLの場合はそのチャンネル)。\n"
+                "複数URLを入力した場合、各チャンネルについて処理します。")
 
         # === Row 3: Filters (3 inputs) ===
         r3 = ttk.Frame(inner, style="Panel.TFrame")
@@ -506,6 +541,44 @@ class YouTubeCommentExtractorApp:
                 "例: 30 と入力すると、上位30件の動画のコメントを処理します。\n"
                 "URLの動画数が少ない場合は、その件数まで処理します。\n"
                 "※「指定した動画のみ」モードでは無効になります。")
+
+        # 並び順 (チャンネル全体モード専用)
+        f_order = ttk.Frame(r3b, style="Panel.TFrame")
+        f_order.pack(side=tk.LEFT, padx=(0, 24))
+        self.order_label = ttk.Label(f_order, text="動画の並び順",
+                                     style="Panel.TLabel")
+        self.order_label.pack(anchor="w")
+        # API値(str) → 表示ラベル(str) の対応表
+        self._order_options = [
+            ("新しい順", "date"),
+            ("視聴回数順 (人気順)", "viewCount"),
+            ("評価順", "rating"),
+            ("関連度順", "relevance"),
+            ("古い順", "oldest"),
+        ]
+        self._order_label_to_value = {lbl: v for lbl, v in self._order_options}
+        self._order_value_to_label = {v: lbl for lbl, v in self._order_options}
+
+        self.order_display_var = tk.StringVar(value=self._order_options[0][0])
+        # 内部利用用 (実際のAPI値)
+        self.order_var = tk.StringVar(value="date")
+
+        self.order_combo = ttk.Combobox(
+            f_order, textvariable=self.order_display_var,
+            values=[lbl for lbl, _ in self._order_options],
+            state="readonly", width=18, font=("", 10),
+        )
+        self.order_combo.pack(anchor="w", pady=(2, 0))
+        self.order_combo.bind("<<ComboboxSelected>>", self._on_order_changed)
+        Tooltip(self.order_combo,
+                "チャンネル全体モードでの動画の並び順を指定します:\n"
+                "・新しい順 : 最新の動画から (最も高速・低コスト)\n"
+                "・視聴回数順: 再生数が多い動画から\n"
+                "・評価順  : 高評価が多い動画から\n"
+                "・関連度順: YouTube推奨アルゴリズム順\n"
+                "・古い順  : 最古の動画から\n"
+                "※「指定した動画のみ」モードでは使用されません。\n"
+                "※新しい順以外はAPIクォータ消費が多くなります (100 units/リクエスト)。")
 
         # 高評価数の下限
         f2 = ttk.Frame(r3b, style="Panel.TFrame")
@@ -791,14 +864,228 @@ class YouTubeCommentExtractorApp:
     # ------------------------------------------------------------------
 
     def _on_mode_changed(self):
-        """取得範囲のラジオボタン変更時。動画数入力欄の有効/無効を切り替える。"""
+        """取得範囲のラジオボタン変更時。動画数・並び順入力の有効/無効を切り替える。"""
         if self.extract_mode_var.get() == "video":
-            # 動画のみモード: 動画数入力は使わない
+            # 動画のみモード: 動画数・並び順は使わない
             self.e_videos.configure(state=tk.DISABLED)
             self.max_videos_label.configure(foreground=C_MUTED)
+            if hasattr(self, "order_combo"):
+                self.order_combo.configure(state=tk.DISABLED)
+                self.order_label.configure(foreground=C_MUTED)
         else:
             self.e_videos.configure(state=tk.NORMAL)
             self.max_videos_label.configure(foreground=C_TEXT)
+            if hasattr(self, "order_combo"):
+                self.order_combo.configure(state="readonly")
+                self.order_label.configure(foreground=C_TEXT)
+
+    def _on_order_changed(self, _evt=None):
+        """並び順コンボボックス変更時。表示ラベルから内部値を更新。"""
+        label = self.order_display_var.get()
+        value = self._order_label_to_value.get(label, "date")
+        self.order_var.set(value)
+
+    # ------------------------------------------------------------------
+    # 複数URL対応 (+ URL追加 / CSV一括読込)
+    # ------------------------------------------------------------------
+
+    def _add_url_row(self, value: str = ""):
+        """URL入力行を1つ追加。value が指定されていれば初期値として設定。"""
+        row = ttk.Frame(self.url_list_frame, style="Panel.TFrame")
+        row.pack(fill=tk.X, pady=2)
+
+        entry = PlaceholderEntry(
+            row,
+            placeholder="例: https://www.youtube.com/watch?v=xxxxx",
+            font=("", 10),
+        )
+        entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        if value:
+            entry.set_value(value)
+        Tooltip(entry,
+                "対応形式:\n"
+                "・動画URL: https://www.youtube.com/watch?v=xxx\n"
+                "・ショート: https://www.youtube.com/shorts/xxx\n"
+                "・ライブ: https://www.youtube.com/live/xxx\n"
+                "・チャンネル: https://www.youtube.com/@名前/videos")
+
+        # 行番号表示用ラベル (リアルタイム更新)
+        num_label = ttk.Label(row, text="", width=4, anchor="e",
+                              style="Sub.TLabel")
+        num_label.pack(side=tk.LEFT, padx=(4, 0))
+
+        remove_btn = ttk.Button(row, text="✕", width=3,
+                                command=lambda r=row, e=entry: self._remove_url_row(r, e))
+        remove_btn.pack(side=tk.LEFT, padx=(4, 0))
+        Tooltip(remove_btn, "このURL行を削除します")
+
+        self.url_entries.append(entry)
+        self.url_rows.append((row, entry, num_label))
+        self._renumber_url_rows()
+
+        # フォーカスを新しい行に移動 (初期行を除く)
+        if len(self.url_entries) > 1:
+            entry.focus_set()
+
+    def _remove_url_row(self, row, entry):
+        """指定したURL行を削除 (最低1行は残す)。"""
+        if len(self.url_rows) <= 1:
+            # 最後の1行は削除せずクリアのみ
+            entry.set_value("")
+            return
+
+        # リストから削除
+        self.url_rows = [r for r in self.url_rows if r[0] is not row]
+        self.url_entries = [r[1] for r in self.url_rows]
+        row.destroy()
+        self._renumber_url_rows()
+
+        # 後方互換性
+        if self.url_entries:
+            self.url_entry = self.url_entries[0]
+
+    def _renumber_url_rows(self):
+        """URL行の通し番号 (#1, #2, ...) を再描画。"""
+        for i, (_, _, label) in enumerate(self.url_rows, 1):
+            label.configure(text=f"#{i}")
+
+    def _clear_all_urls(self):
+        """全てのURL行をクリア (1行は残して中身だけ空に)。"""
+        # 最初の1行だけ残し、残りは削除
+        while len(self.url_rows) > 1:
+            row, _, _ = self.url_rows.pop()
+            row.destroy()
+        if self.url_rows:
+            _, entry, _ = self.url_rows[0]
+            entry.set_value("")
+        self.url_entries = [r[1] for r in self.url_rows]
+        self.url_entry = self.url_entries[0] if self.url_entries else None
+        self._renumber_url_rows()
+
+    def _load_urls_from_csv(self):
+        """CSV/TXTファイルからURLを一括読込。"""
+        filepath = filedialog.askopenfilename(
+            title="URL一覧ファイルを選択",
+            filetypes=[
+                ("CSV / TXT ファイル", "*.csv *.txt"),
+                ("CSV ファイル", "*.csv"),
+                ("TXT ファイル", "*.txt"),
+                ("全てのファイル", "*.*"),
+            ],
+        )
+        if not filepath:
+            return
+
+        urls = self._parse_urls_file(filepath)
+
+        if not urls:
+            messagebox.showwarning(
+                "URLが見つかりません",
+                "選択したファイルからYouTubeのURLを検出できませんでした。\n\n"
+                "ファイル形式:\n"
+                "・1行に1つのURLを記載 (TXT/CSV共通)\n"
+                "・CSV形式の場合、任意の列にURL記載可\n"
+                "・ヘッダ行は自動でスキップされます"
+            )
+            return
+
+        # 確認ダイアログ
+        proceed = messagebox.askyesno(
+            "URL読込の確認",
+            f"ファイルから {len(urls)} 件のYouTube URLを検出しました。\n\n"
+            f"最初の5件:\n" +
+            "\n".join(f"  {i+1}. {u[:70]}" for i, u in enumerate(urls[:5])) +
+            (f"\n  ... 他 {len(urls) - 5} 件" if len(urls) > 5 else "") +
+            "\n\n既存のURL入力欄を置き換えて読み込みますか？"
+        )
+        if not proceed:
+            return
+
+        # 既存の全行を削除してから読み込んだURLを追加
+        for row, _, _ in self.url_rows:
+            row.destroy()
+        self.url_rows = []
+        self.url_entries = []
+
+        for url in urls:
+            self._add_url_row(value=url)
+
+        if self.url_entries:
+            self.url_entry = self.url_entries[0]
+
+        messagebox.showinfo(
+            "読込完了",
+            f"{len(urls)} 件のURLを読み込みました。\n\n"
+            f"取得範囲モード: "
+            f"{'指定した動画のみ' if self.extract_mode_var.get() == 'video' else 'チャンネル全体'}\n"
+            "確認したら「▶ 稼働」ボタンを押してください。"
+        )
+
+    def _parse_urls_file(self, filepath: str) -> list:
+        """
+        CSV/TXT からYouTube URLだけを抽出して返す。
+
+        - 各行をカンマで分割し、各セルからURLパターンを抽出
+        - youtube.com / youtu.be を含むものだけを対象
+        - 重複除去 (順序は維持)
+        """
+        import re
+        yt_pattern = re.compile(
+            r"https?://(?:www\.|m\.)?(?:youtube\.com/\S+|youtu\.be/\S+)",
+            re.IGNORECASE,
+        )
+
+        urls = []
+        seen = set()
+
+        # 複数のエンコーディングを試行
+        content = None
+        for enc in ("utf-8-sig", "utf-8", "cp932", "shift_jis"):
+            try:
+                with open(filepath, "r", encoding=enc) as f:
+                    content = f.read()
+                break
+            except (UnicodeDecodeError, OSError):
+                continue
+
+        if content is None:
+            messagebox.showerror(
+                "読込エラー",
+                f"ファイルの読み込みに失敗しました:\n{filepath}\n\n"
+                "UTF-8, Shift-JIS のいずれでも読めません。"
+            )
+            return []
+
+        for line in content.splitlines():
+            # カンマ・タブ・セミコロン区切りに対応
+            for cell in re.split(r"[,\t;]", line):
+                cell = cell.strip().strip('"').strip("'")
+                if not cell:
+                    continue
+                # URL パターン検出
+                for m in yt_pattern.finditer(cell):
+                    url = m.group(0).rstrip(",;\"'")
+                    if url not in seen:
+                        seen.add(url)
+                        urls.append(url)
+                # URL パターンに一致しなくても youtube.com を含むなら追加試行
+                if not yt_pattern.search(cell) and (
+                    "youtube.com" in cell.lower() or "youtu.be" in cell.lower()
+                ):
+                    if cell not in seen:
+                        seen.add(cell)
+                        urls.append(cell)
+
+        return urls
+
+    def _get_all_urls(self) -> list:
+        """全URL入力欄から空でないURLを取得。"""
+        urls = []
+        for entry in self.url_entries:
+            u = entry.get_value().strip()
+            if u:
+                urls.append(u)
+        return urls
 
     def _toggle_api_key(self):
         if self._key_visible:
@@ -889,16 +1176,21 @@ class YouTubeCommentExtractorApp:
             self.api_key_entry.focus_set()
             return
 
-        url = self.url_entry.get_value().strip()
-        if not url:
+        urls = self._get_all_urls()
+        if not urls:
             messagebox.showwarning(
                 "URL未入力",
-                "YouTube チャンネルURL または 動画URL を入力してください。"
+                "YouTube URL を1つ以上入力してください。\n\n"
+                "「+ URL追加」で複数入力、「CSVから一括読込」でまとめて読み込めます。"
             )
-            self.url_entry.focus_set()
+            if self.url_entries:
+                self.url_entries[0].focus_set()
             return
 
         mode = self.extract_mode_var.get()  # "channel" or "video"
+
+        # 並び順設定 (チャンネル全体モードのみ有効)
+        order = self.order_var.get() if hasattr(self, "order_var") else "date"
 
         if mode == "channel":
             try:
@@ -937,7 +1229,7 @@ class YouTubeCommentExtractorApp:
 
         self.worker_thread = threading.Thread(
             target=self._worker,
-            args=(api_key, url, max_videos, min_likes, text_filter, mode),
+            args=(api_key, urls, max_videos, min_likes, text_filter, mode, order),
             daemon=True,
         )
         self.worker_thread.start()
@@ -952,7 +1244,8 @@ class YouTubeCommentExtractorApp:
     # Background worker
     # ------------------------------------------------------------------
 
-    def _worker(self, api_key, url, max_videos, min_likes, text_filter, mode="channel"):
+    def _worker(self, api_key, urls, max_videos, min_likes, text_filter,
+                mode="video", order="date"):
         put = self.msg_queue.put
         try:
             put({"type": "status", "text": "API接続中..."})
@@ -961,46 +1254,70 @@ class YouTubeCommentExtractorApp:
             put({"type": "status", "text": "APIキーを検証中..."})
             client.validate_api_key()
 
-            put({"type": "status", "text": "URL解析中..."})
-            url_info = client.parse_url(url)
+            # --- 入力URLから動画リストを構築 ---
+            all_videos = []
+            url_errors = []
 
-            # --- モード分岐 ---
-            if mode == "video":
-                # 「指定した動画のみ」モード
-                if url_info["type"] != "video":
-                    raise ValueError(
-                        "「指定した動画のみ」モードでは動画URLを入力してください。\n"
-                        "例: https://www.youtube.com/watch?v=VIDEO_ID\n"
-                        "    https://www.youtube.com/shorts/VIDEO_ID\n"
-                        "    https://www.youtube.com/live/VIDEO_ID"
-                    )
-                put({"type": "status", "text": "動画情報を取得中..."})
-                video = client.get_video_details(url_info["id"])
-                videos = [video]
-            else:
-                # 「チャンネル全体」モード
-                put({"type": "status", "text": "チャンネル情報取得中..."})
-                channel_id = client.resolve_channel_id(url_info)
-                tab = url_info["tab"]
+            for url_idx, url in enumerate(urls):
+                if self.cancelled:
+                    break
+                put({"type": "status",
+                     "text": f"URL解析中... ({url_idx + 1}/{len(urls)}): {url[:60]}"})
 
-                def _vid_progress(msg):
-                    put({"type": "status", "text": msg})
+                try:
+                    url_info = client.parse_url(url)
 
-                videos = client.get_videos(
-                    channel_id, tab, max_videos,
-                    progress_callback=_vid_progress,
-                    cancel_check=lambda: self.cancelled,
-                )
+                    if mode == "video":
+                        if url_info["type"] != "video":
+                            raise ValueError(
+                                f"動画URLではありません (チャンネルURLが入力されています): {url}\n"
+                                "「指定した動画のみ」モードでは動画URLを入力してください。"
+                            )
+                        video = client.get_video_details(url_info["id"])
+                        all_videos.append(video)
+                    else:
+                        put({"type": "status",
+                             "text": f"[{url_idx + 1}/{len(urls)}] チャンネル情報取得中..."})
+                        channel_id = client.resolve_channel_id(url_info)
+                        tab = url_info["tab"]
+
+                        def _vid_progress(msg, n=url_idx + 1, t=len(urls)):
+                            put({"type": "status",
+                                 "text": f"[{n}/{t}] {msg}"})
+
+                        vids = client.get_videos(
+                            channel_id, tab, max_videos,
+                            order=order,
+                            progress_callback=_vid_progress,
+                            cancel_check=lambda: self.cancelled,
+                        )
+                        all_videos.extend(vids)
+                except Exception as exc:
+                    url_errors.append(f"{url}: {exc}")
+                    put({"type": "status",
+                         "text": f"[スキップ] URL{url_idx + 1}: {str(exc)[:80]}"})
+                    continue
 
             if self.cancelled:
                 put({"type": "done", "error": None})
                 return
 
+            # 重複動画を除去 (video_idで判定、順序は維持)
+            seen_vids = set()
+            videos = []
+            for v in all_videos:
+                if v["video_id"] not in seen_vids:
+                    seen_vids.add(v["video_id"])
+                    videos.append(v)
+
             total = len(videos)
             if total == 0:
-                put({"type": "status",
-                     "text": "動画が見つかりませんでした。URLまたはタブを確認してください。"})
-                put({"type": "done", "error": None})
+                err_msg = "動画が見つかりませんでした。"
+                if url_errors:
+                    err_msg += "\n\n【エラー詳細】\n" + "\n".join(url_errors[:5])
+                put({"type": "status", "text": "動画が見つかりませんでした。"})
+                put({"type": "done",
+                     "error": err_msg if url_errors else None})
                 return
 
             self._total_videos = total

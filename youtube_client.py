@@ -269,29 +269,53 @@ class YouTubeClient:
         channel_id: str,
         tab: str,
         max_videos: int,
+        order: str = "date",
         progress_callback: Optional[Callable[[str], None]] = None,
         cancel_check: Optional[Callable[[], bool]] = None,
     ) -> List[Dict]:
-        """Get videos from a channel according to the selected tab."""
-        if tab == "shorts":
-            return self._search_videos(
+        """
+        Get videos from a channel.
+
+        Args:
+            order: 並び順
+                - "date"      : 新しい順 (デフォルト)
+                - "viewCount" : 視聴回数順 (再生が多い順)
+                - "rating"    : 評価順
+                - "oldest"    : 古い順
+                - "relevance" : 関連度順 (YouTubeアルゴリズム推奨順)
+        """
+        # "videos" タブで「新しい順」の場合のみ uploads playlist が最安
+        # (playlistItems.list = 1 unit)。その他はすべて search.list (100 units/page)
+        if tab == "videos" and order == "date":
+            return self._get_uploads(
                 channel_id, max_videos,
-                video_duration="short",
                 progress_callback=progress_callback,
                 cancel_check=cancel_check,
             )
-        if tab == "streams":
-            return self._search_videos(
-                channel_id, max_videos,
-                event_type="completed",
-                progress_callback=progress_callback,
-                cancel_check=cancel_check,
-            )
-        return self._get_uploads(
+
+        # 以降は search.list を使用
+        search_order = order if order != "oldest" else "date"
+        reverse = (order == "oldest")
+
+        video_duration = "short" if tab == "shorts" else None
+        event_type = "completed" if tab == "streams" else None
+
+        results = self._search_videos(
             channel_id, max_videos,
+            video_duration=video_duration,
+            event_type=event_type,
+            order=search_order,
             progress_callback=progress_callback,
             cancel_check=cancel_check,
         )
+
+        # 「古い順」は date の結果を末尾から取得し直す必要がある
+        # ただし search.list は最大500件までしか取得できないため、
+        # 完全な古い順にはならない場合がある
+        if reverse:
+            results.reverse()
+
+        return results
 
     def _get_uploads(self, channel_id, max_videos,
                      progress_callback=None, cancel_check=None):
@@ -367,6 +391,7 @@ class YouTubeClient:
 
     def _search_videos(self, channel_id, max_videos,
                        video_duration=None, event_type=None,
+                       order="date",
                        progress_callback=None, cancel_check=None):
         """Get videos via the Search API (for shorts / streams)."""
         videos = []  # type: List[Dict]
@@ -383,7 +408,7 @@ class YouTubeClient:
                 "part": "snippet",
                 "channelId": channel_id,
                 "type": "video",
-                "order": "date",
+                "order": order,
                 "maxResults": min(50, max_videos - len(videos)),
             }
             if video_duration:
