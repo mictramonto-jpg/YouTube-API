@@ -27,7 +27,8 @@ except ImportError:
 
 try:
     from youtube_client import (
-        YouTubeClient, APIError, format_date, format_datetime
+        YouTubeClient, APIError, format_date, format_datetime,
+        estimate_quota_level,
     )
 except ImportError as e:
     print(f"Error: youtube_client.py を読み込めません: {e}")
@@ -226,6 +227,8 @@ class YouTubeCommentExtractorApp:
 
         # 初期モードに合わせてUI (動画数・並び順) の有効/無効を設定
         self._on_mode_changed()
+        # 想定消費レベルの初回表示
+        self._update_quota_level()
 
         # キーボードショートカット
         self.root.bind("<F1>", lambda e: self.show_api_guide())
@@ -286,6 +289,13 @@ class YouTubeCommentExtractorApp:
         style.configure("Status.TLabel", background=C_BG, foreground=C_TEXT, font=base_font)
         style.configure("StatusOK.TLabel", background=C_BG, foreground=C_OK, font=base_font)
         style.configure("StatusWarn.TLabel", background=C_BG, foreground=C_WARN, font=base_font)
+
+        # クォータレベル表示用 (少=緑 / 中=青 / 多=オレンジ / 大=赤)
+        _q_font = ("Yu Gothic UI", 9, "bold") if sys.platform == "win32" else ("", 9, "bold")
+        style.configure("QuotaLow.TLabel",  background=C_BG, foreground="#2e7d32", font=_q_font)
+        style.configure("QuotaMid.TLabel",  background=C_BG, foreground="#1565c0", font=_q_font)
+        style.configure("QuotaHigh.TLabel", background=C_BG, foreground="#ef6c00", font=_q_font)
+        style.configure("QuotaVHigh.TLabel", background=C_BG, foreground="#c62828", font=_q_font)
 
         style.configure("TLabelframe", background=C_BG, borderwidth=1, relief="solid")
         style.configure("TLabelframe.Label", background=C_BG, foreground=C_TEXT, font=heading_font)
@@ -536,6 +546,8 @@ class YouTubeCommentExtractorApp:
         self.e_videos = ttk.Entry(f1, textvariable=self.max_videos_var, width=10,
                                    font=("", 10), justify="right")
         self.e_videos.pack(anchor="w", pady=(2, 0))
+        self.e_videos.bind("<KeyRelease>",
+                           lambda e: self._update_quota_level(), add="+")
         Tooltip(self.e_videos,
                 "上位表示されている動画から順に、この件数までを対象にします。\n"
                 "例: 30 と入力すると、上位30件の動画のコメントを処理します。\n"
@@ -850,6 +862,20 @@ class YouTubeCommentExtractorApp:
         sframe = ttk.Frame(frame)
         sframe.pack(fill=tk.X, pady=(6, 0))
 
+        # 想定APIクォータ消費レベル (左端に表示)
+        self.quota_level_var = tk.StringVar(value="想定API消費: 少")
+        self.quota_level_label = ttk.Label(sframe, textvariable=self.quota_level_var,
+                                           style="QuotaLow.TLabel")
+        self.quota_level_label.pack(side=tk.LEFT, padx=(0, 12))
+        Tooltip(self.quota_level_label,
+                "現在の入力条件で、YouTube APIをどの程度消費するかの目安:\n"
+                "・少: 余裕あり (1日に何度も実行可能)\n"
+                "・中: やや消費 (1日数回程度)\n"
+                "・多: 大きく消費 (1日数回で上限接近)\n"
+                "・大: 非常に大きい (1回で上限に近い・注意)\n\n"
+                "※コメント数は動画により変動するため、実際の消費は目安と異なります。\n"
+                "※実残量はGoogle Cloud Consoleで確認してください。")
+
         self.status_var = tk.StringVar(value="準備完了 - APIキーとURLを入力して「稼働」をクリックしてください")
         self.status_label = ttk.Label(sframe, textvariable=self.status_var,
                                        style="Status.TLabel")
@@ -878,12 +904,66 @@ class YouTubeCommentExtractorApp:
             if hasattr(self, "order_combo"):
                 self.order_combo.configure(state="readonly")
                 self.order_label.configure(foreground=C_TEXT)
+        # 想定消費レベルを更新
+        self._update_quota_level()
 
     def _on_order_changed(self, _evt=None):
-        """並び順コンボボックス変更時。表示ラベルから内部値を更新。"""
+        """並び順コンボボックス変更時。表示ラベルから内部値を更新し、レベルも再計算。"""
         label = self.order_display_var.get()
         value = self._order_label_to_value.get(label, "date")
         self.order_var.set(value)
+        self._update_quota_level()
+
+    # ------------------------------------------------------------------
+    # 想定APIクォータレベル表示 (少/中/多/大)
+    # ------------------------------------------------------------------
+
+    def _update_quota_level(self):
+        """入力条件から想定消費レベルを判定し、表示を更新。"""
+        if not hasattr(self, "quota_level_var"):
+            return
+        try:
+            urls = self._get_all_urls() if hasattr(self, "url_entries") else []
+            num_urls = max(1, len(urls))
+            mode = self.extract_mode_var.get()
+            try:
+                max_videos = int(self.max_videos_var.get() or "30")
+            except ValueError:
+                max_videos = 30
+            order = self.order_var.get() if hasattr(self, "order_var") else "date"
+
+            # 先頭URLからタブをヒント判定
+            tab_hint = "videos"
+            if urls:
+                u = urls[0].lower()
+                if "/shorts/" in u or "/shorts" in u:
+                    tab_hint = "shorts"
+                elif "/streams" in u or "/live" in u:
+                    tab_hint = "streams"
+
+            level = estimate_quota_level(
+                num_urls=num_urls,
+                mode=mode,
+                max_videos_per_channel=max_videos,
+                order=order,
+                tab_hint=tab_hint,
+            )
+        except Exception:
+            level = "少"
+
+        # ラベル・スタイルを更新
+        style_map = {
+            "少": ("QuotaLow.TLabel",  "● 少"),
+            "中": ("QuotaMid.TLabel",  "●● 中"),
+            "多": ("QuotaHigh.TLabel", "●●● 多"),
+            "大": ("QuotaVHigh.TLabel", "●●●● 大"),
+        }
+        style_name, marker = style_map.get(level, ("QuotaLow.TLabel", "● 少"))
+        self.quota_level_var.set(f"想定API消費: {marker}")
+        try:
+            self.quota_level_label.configure(style=style_name)
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------------------
     # 複数URL対応 (+ URL追加 / CSV一括読込)
@@ -902,6 +982,11 @@ class YouTubeCommentExtractorApp:
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         if value:
             entry.set_value(value)
+        # URLが入力/編集されたら消費レベルを再計算
+        entry.bind("<KeyRelease>",
+                   lambda e: self._update_quota_level(), add="+")
+        entry.bind("<FocusOut>",
+                   lambda e: self._update_quota_level(), add="+")
         Tooltip(entry,
                 "対応形式:\n"
                 "・動画URL: https://www.youtube.com/watch?v=xxx\n"
@@ -932,6 +1017,7 @@ class YouTubeCommentExtractorApp:
         if len(self.url_rows) <= 1:
             # 最後の1行は削除せずクリアのみ
             entry.set_value("")
+            self._update_quota_level()
             return
 
         # リストから削除
@@ -943,6 +1029,7 @@ class YouTubeCommentExtractorApp:
         # 後方互換性
         if self.url_entries:
             self.url_entry = self.url_entries[0]
+        self._update_quota_level()
 
     def _renumber_url_rows(self):
         """URL行の通し番号 (#1, #2, ...) を再描画。"""
@@ -961,6 +1048,7 @@ class YouTubeCommentExtractorApp:
         self.url_entries = [r[1] for r in self.url_rows]
         self.url_entry = self.url_entries[0] if self.url_entries else None
         self._renumber_url_rows()
+        self._update_quota_level()
 
     def _load_urls_from_csv(self):
         """CSV/TXTファイルからURLを一括読込。"""
@@ -1012,6 +1100,8 @@ class YouTubeCommentExtractorApp:
 
         if self.url_entries:
             self.url_entry = self.url_entries[0]
+
+        self._update_quota_level()
 
         messagebox.showinfo(
             "読込完了",
