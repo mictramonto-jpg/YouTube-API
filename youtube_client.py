@@ -545,53 +545,6 @@ def format_datetime(iso_string: str) -> str:
         return iso_string
 
 
-def estimate_quota_level(
-    num_urls: int,
-    mode: str = "video",
-    max_videos_per_channel: int = 30,
-    order: str = "date",
-    tab_hint: str = "videos",
-) -> str:
-    """
-    入力条件から想定APIクォータ消費量を推定し、定性的なレベルを返す。
-
-    注: YouTube Data APIは実際の残量を取得できないため、これは目安です。
-    コメント数は動画により大きく異なるため、実消費は想定と乖離します。
-
-    Returns: "少" | "中" | "多" | "大"
-    """
-    # 内部で大まかなユニット数を計算 (表示はしない)
-    cost_est = 1  # APIキー検証
-
-    if mode == "video":
-        # videos.list × N + commentThreads.list × N × avg_pages
-        cost_est += num_urls * 1
-        cost_est += num_urls * 5  # 平均5ページ想定
-    else:
-        # チャンネル特定 (× N)
-        cost_est += num_urls * 1
-        # 動画リスト取得
-        pages = max(1, (max_videos_per_channel + 49) // 50)
-        if tab_hint == "videos" and order == "date":
-            cost_est += num_urls * pages * 1
-        else:
-            cost_est += num_urls * pages * 100  # search.list
-        # コメント取得
-        total_videos = num_urls * max_videos_per_channel
-        cost_est += total_videos * 5
-
-    # 無料枠 10,000 units に対する割合でレベル判定
-    # 少: ~5% (< 500)   中: 5~20% (500~2000)
-    # 多: 20~50% (2000~5000)   大: >50% (5000+)
-    if cost_est < 500:
-        return "少"
-    if cost_est < 2000:
-        return "中"
-    if cost_est < 5000:
-        return "多"
-    return "大"
-
-
 def _normalize_tab(tab: Optional[str]) -> str:
     """Normalize a URL path segment to a canonical tab name."""
     if not tab:
